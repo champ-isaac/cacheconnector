@@ -1,3 +1,5 @@
+//go:build integration
+
 package redis
 
 import (
@@ -72,10 +74,10 @@ func TestClient_HSet_N_HGetAllNScan(t *testing.T) {
 }
 
 func TestClient_KeyNotExist_HGetNScan(t *testing.T) {
-	var out map[string]any
+	var out CacheData
 	err := client.HGetAllNScan(ctx, "Not_Exist", &out)
 	assert.NoError(t, err)
-	assert.Equal(t, map[string]any{}, out)
+	assert.Equal(t, CacheData{}, out)
 }
 
 func sha512HashToBase64(value string) string {
