@@ -16,22 +16,27 @@ import (
 // Values are trimmed. A variable that is unset or empty keeps the default of
 // New (an empty REDIS_PASSWORD means no authentication). Only REDIS_DB can be
 // rejected here, by name; no error contains the password.
-func OptionsFromEnv() ([]Option, error) {
-	get := func(k string) string { return strings.TrimSpace(os.Getenv(k)) }
+func OptionsFromEnv() ([]Option, error) { return OptionsFromEnvPrefix("REDIS") }
+
+// OptionsFromEnvPrefix is OptionsFromEnv with another variable prefix, for
+// example "VALKEY" reads VALKEY_ADDR, VALKEY_USERNAME, VALKEY_PASSWORD and
+// VALKEY_DB.
+func OptionsFromEnvPrefix(prefix string) ([]Option, error) {
+	get := func(k string) string { return strings.TrimSpace(os.Getenv(prefix + "_" + k)) }
 	var opts []Option
-	if addr := get("REDIS_ADDR"); addr != "" {
+	if addr := get("ADDR"); addr != "" {
 		opts = append(opts, WithAddr(addr))
 	}
-	if user := get("REDIS_USERNAME"); user != "" {
+	if user := get("USERNAME"); user != "" {
 		opts = append(opts, WithUsername(user))
 	}
-	if pw := get("REDIS_PASSWORD"); pw != "" {
+	if pw := get("PASSWORD"); pw != "" {
 		opts = append(opts, WithPassword(pw))
 	}
-	if s := get("REDIS_DB"); s != "" {
+	if s := get("DB"); s != "" {
 		db, err := strconv.Atoi(s)
 		if err != nil || db < 0 {
-			return nil, fmt.Errorf("redis: bad REDIS_DB %q", s)
+			return nil, fmt.Errorf("redis: bad %s_DB %q", prefix, s)
 		}
 		opts = append(opts, WithDB(db))
 	}
