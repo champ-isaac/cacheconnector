@@ -91,6 +91,13 @@ func TestNew(t *testing.T) {
 		assert.IsType(t, memoryCache{}, c)
 		assert.NoError(t, c.Close())
 	})
+	t.Run("in-memory ignores the redis settings", func(t *testing.T) {
+		t.Setenv(EnvBackend, "inmemory")
+		t.Setenv("REDIS_DB", "three")
+		c, err := FromEnv(ctx)
+		require.NoError(t, err)
+		_ = c.Close()
+	})
 	t.Run("unknown backend", func(t *testing.T) {
 		_, err := New(ctx, Config{Backend: "memcached"})
 		assert.ErrorContains(t, err, `unknown backend "memcached"`)
@@ -132,6 +139,13 @@ func TestFromEnv(t *testing.T) {
 		t.Setenv("REDIS_DB", "three")
 		_, err := FromEnv(ctx)
 		assert.ErrorContains(t, err, "bad REDIS_DB")
+	})
+	t.Run("in-memory ignores the redis settings", func(t *testing.T) {
+		t.Setenv(EnvBackend, "inmemory")
+		t.Setenv("REDIS_DB", "three")
+		c, err := FromEnv(ctx)
+		require.NoError(t, err)
+		_ = c.Close()
 	})
 	t.Run("unknown backend", func(t *testing.T) {
 		t.Setenv(EnvBackend, "etcd")

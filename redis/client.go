@@ -137,6 +137,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	}
 	rsClient := redis.NewClient(rsOpts)
 	if err := rsClient.Ping(ctx).Err(); err != nil {
+		_ = rsClient.Close() // do not leak the pool when the caller retries
 		return nil, err
 	}
 	client.raw = rsClient
