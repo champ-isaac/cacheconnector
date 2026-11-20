@@ -106,4 +106,44 @@ Redis and Valkey run against miniredis, and Memcached against an in-process fake
 `go.mod` is vendored locally (`vendor/` is not committed). Run `go mod vendor` after changing dependencies.
 
 ## Architecture
-![Level Memory](level_memory.png)
+
+How the packages fit together. Backends depend on the root package, never the other way round, which is why a program compiles only the backends it imports.
+
+```mermaid
+flowchart TB
+    app["Your program"]
+
+    subgraph core["cache (root package, no backend imports)"]
+        iface["Cache interface<br/>Get / Set / Delete / Ping / Close"]
+        reg["Registry<br/>Open / FromEnv / Register / Backends"]
+    end
+
+    subgraph backends["Backends: each registers its DSN scheme in init()"]
+        mem["inmemory<br/>inmemory:"]
+        redis["redis<br/>redis:// and rediss://<br/>also redis.Client (go-redis)"]
+        valkey["valkey<br/>valkey:// and valkeys://"]
+        mc["memcached<br/>memcached://"]
+    end
+
+    all["all<br/>blank-imports every backend"]
+    ct["cachetest<br/>shared contract suite"]
+    ring["utils.HashRing<br/>consistent hashing, standalone"]
+
+    heap[("process memory")]
+    rs[("Redis server")]
+    vs[("Valkey server")]
+    ms[("Memcached server")]
+
+    app -->|"cache.Open(dsn) or FromEnv()"| reg
+    app -.->|"or import _ all"| all
+    all --> backends
+    backends -->|"Register(scheme, factory)"| reg
+    backends -->|"implement"| iface
+    valkey -->|"reuses client"| redis
+    ct -.->|"run by each backend's tests"| backends
+
+    mem --> heap
+    redis --> rs
+    valkey --> vs
+    mc --> ms
+```
