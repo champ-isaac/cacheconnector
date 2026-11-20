@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -60,28 +59,17 @@ func New(ctx context.Context, cfg Config) (Cache, error) {
 	}
 }
 
-// FromEnv builds a cache from environment variables:
-//
-//	CACHE_BACKEND   inmemory (default) or redis
-//	REDIS_ADDR      host:port (default 127.0.0.1:6379)
-//	REDIS_USERNAME, REDIS_PASSWORD, REDIS_DB
+// FromEnv builds a cache from environment variables: CACHE_BACKEND (inmemory,
+// the default, or redis) and, for redis only, the settings that
+// redis.OptionsFromEnv documents (REDIS_ADDR, REDIS_USERNAME, ...).
 func FromEnv(ctx context.Context) (Cache, error) {
 	cfg := Config{Backend: Backend(os.Getenv(EnvBackend))}
-	if addr := os.Getenv("REDIS_ADDR"); addr != "" {
-		cfg.Redis = append(cfg.Redis, redis.WithAddr(addr))
-	}
-	if user := os.Getenv("REDIS_USERNAME"); user != "" {
-		cfg.Redis = append(cfg.Redis, redis.WithUsername(user))
-	}
-	if pw := os.Getenv("REDIS_PASSWORD"); pw != "" {
-		cfg.Redis = append(cfg.Redis, redis.WithPassword(pw))
-	}
-	if s := os.Getenv("REDIS_DB"); s != "" {
-		db, err := strconv.Atoi(s)
+	if cfg.Backend == BackendRedis {
+		opts, err := redis.OptionsFromEnv()
 		if err != nil {
-			return nil, fmt.Errorf("cache: bad REDIS_DB %q: %w", s, err)
+			return nil, fmt.Errorf("cache: %w", err)
 		}
-		cfg.Redis = append(cfg.Redis, redis.WithDB(db))
+		cfg.Redis = opts
 	}
 	return New(ctx, cfg)
 }

@@ -63,7 +63,7 @@ func TestCache_TTLExpires(t *testing.T) {
 
 	m, err := New(ctx, Config{InMemory: []inmemory.Option{inmemory.WithCleanupInterval(time.Hour)}})
 	require.NoError(t, err)
-	defer m.Close()
+	t.Cleanup(func() { assert.NoError(t, m.Close()) })
 	require.NoError(t, m.Set(ctx, "k", "v", 20*time.Millisecond))
 	time.Sleep(40 * time.Millisecond)
 	_, err = m.Get(ctx, "k")
@@ -90,6 +90,13 @@ func TestNew(t *testing.T) {
 		require.NoError(t, err)
 		assert.IsType(t, memoryCache{}, c)
 		assert.NoError(t, c.Close())
+	})
+	t.Run("in-memory ignores the redis settings", func(t *testing.T) {
+		t.Setenv(EnvBackend, "inmemory")
+		t.Setenv("REDIS_DB", "three")
+		c, err := FromEnv(ctx)
+		require.NoError(t, err)
+		_ = c.Close()
 	})
 	t.Run("unknown backend", func(t *testing.T) {
 		_, err := New(ctx, Config{Backend: "memcached"})
@@ -119,7 +126,7 @@ func TestFromEnv(t *testing.T) {
 		t.Setenv("REDIS_DB", "3")
 		c, err := FromEnv(ctx)
 		require.NoError(t, err)
-		defer c.Close()
+		t.Cleanup(func() { assert.NoError(t, c.Close()) })
 		assert.IsType(t, redisCache{}, c)
 		require.NoError(t, c.Set(ctx, "k", "v", 0))
 		mr.Select(3)
@@ -132,6 +139,13 @@ func TestFromEnv(t *testing.T) {
 		t.Setenv("REDIS_DB", "three")
 		_, err := FromEnv(ctx)
 		assert.ErrorContains(t, err, "bad REDIS_DB")
+	})
+	t.Run("in-memory ignores the redis settings", func(t *testing.T) {
+		t.Setenv(EnvBackend, "inmemory")
+		t.Setenv("REDIS_DB", "three")
+		c, err := FromEnv(ctx)
+		require.NoError(t, err)
+		_ = c.Close()
 	})
 	t.Run("unknown backend", func(t *testing.T) {
 		t.Setenv(EnvBackend, "etcd")
