@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"tw.com.championtek.cache/redis"
+	"github.com/champ-isaac/cacheconnector/redis"
 )
 
 const (
