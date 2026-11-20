@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -146,7 +147,9 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 }
 
 func buildTLSConfig(caCertPath string, servername string) (*tls.Config, error) {
-	caCert, err := os.ReadFile(caCertPath)
+	// caCertPath is operator-supplied configuration (not untrusted input) and may
+	// legitimately be any absolute path, so os.Root scoping does not apply.
+	caCert, err := os.ReadFile(filepath.Clean(caCertPath)) // #nosec G304 -- trusted config path
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA certificate: %w", err)
 	}

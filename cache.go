@@ -12,8 +12,8 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"tw.com.championtek.cache/inmemory"
-	"tw.com.championtek.cache/redis"
+	"github.com/champ-isaac/cacheconnector/inmemory"
+	"github.com/champ-isaac/cacheconnector/redis"
 )
 
 // ErrNotFound is returned by Get when the key is missing or expired.

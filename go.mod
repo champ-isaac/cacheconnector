@@ -1,4 +1,4 @@
-module tw.com.championtek.cache
+module github.com/champ-isaac/cacheconnector
 
 go 1.26
 
