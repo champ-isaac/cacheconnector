@@ -13,7 +13,7 @@ import (
 const (
 	// EnvBackend names the backend FromEnv opens. The default is "inmemory".
 	EnvBackend = "CACHE_BACKEND"
-	// EnvURL, when set, is the DSN FromEnv opens and EnvBackend is ignored.
+	// EnvURL when set, is the DSN FromEnv opens and EnvBackend is ignored.
 	EnvURL = "CACHE_URL"
 
 	defaultBackend = "inmemory"
