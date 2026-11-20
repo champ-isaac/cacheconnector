@@ -77,7 +77,7 @@ func TestNew_DefaultsAndOptions(t *testing.T) {
 		WithPoolSize(5), WithMinIdleConns(1), WithReadTimeout(time.Second), WithWriteTimeout(time.Second),
 		WithEnableTls(false), WithCACertPath(""), WithServerName(""))
 	require.NoError(t, err)
-	defer c.Close()
+	t.Cleanup(func() { assert.NoError(t, c.Close()) })
 	assert.Equal(t, "PONG", c.Ping(ctx))
 	assert.NotNil(t, c.Raw())
 	assert.NotNil(t, c.Pipe())
@@ -116,7 +116,7 @@ func TestNew_TLS(t *testing.T) {
 	addr, caPath := tlsServer(t)
 	c, err := New(ctx, WithAddr(addr), WithEnableTls(true), WithCACertPath(caPath), WithServerName("redis.test"))
 	require.NoError(t, err)
-	defer c.Close()
+	t.Cleanup(func() { assert.NoError(t, c.Close()) })
 	assert.Equal(t, "PONG", c.Ping(ctx))
 
 	_, err = New(ctx, WithAddr(addr), WithEnableTls(true), WithCACertPath(caPath), WithServerName("other.host"))

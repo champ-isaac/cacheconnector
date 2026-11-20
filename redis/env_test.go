@@ -18,7 +18,7 @@ func TestFromEnv(t *testing.T) {
 		t.Setenv("REDIS_DB", "3")
 		c, err := FromEnv(ctx)
 		require.NoError(t, err)
-		defer c.Close()
+		t.Cleanup(func() { assert.NoError(t, c.Close()) })
 		require.NoError(t, c.Set(ctx, "k", "v", 0))
 		mr.Select(3)
 		got, err := mr.Get("k")
