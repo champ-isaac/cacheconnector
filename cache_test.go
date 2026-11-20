@@ -2,153 +2,109 @@ package cache
 
 import (
 	"context"
+	"errors"
+	"net/url"
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/champ-isaac/cacheconnector/inmemory"
-	"github.com/champ-isaac/cacheconnector/redis"
 )
 
 var ctx = context.Background()
 
-// backends returns one ready Cache per backend, so every test runs against both.
-func backends(t *testing.T) map[string]Cache {
+type stub struct{ u *url.URL }
+
+func (stub) Get(context.Context, string) ([]byte, error)              { return nil, ErrNotFound }
+func (stub) Set(context.Context, string, []byte, time.Duration) error { return nil }
+func (stub) Delete(context.Context, string) error                     { return nil }
+func (stub) Ping(context.Context) error                               { return nil }
+func (stub) Close() error                                             { return nil }
+
+// reset runs a test against an empty registry and restores it afterwards.
+func reset(t *testing.T) {
 	t.Helper()
-	mr := miniredis.RunT(t)
-	r, err := New(ctx, Config{Backend: BackendRedis, Redis: []redis.Option{redis.WithAddr(mr.Addr())}})
-	require.NoError(t, err)
-	m, err := New(ctx, Config{Backend: BackendInMemory, InMemory: []inmemory.Option{inmemory.WithCleanupInterval(time.Hour)}})
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = r.Close(); _ = m.Close() })
-	return map[string]Cache{"redis": r, "inmemory": m}
+	mu.Lock()
+	saved := factories
+	factories = map[string]Factory{}
+	mu.Unlock()
+	t.Cleanup(func() { mu.Lock(); factories = saved; mu.Unlock() })
 }
 
-// The same behaviour is expected from both backends.
-func TestCache_Contract(t *testing.T) {
-	for name, c := range backends(t) {
-		t.Run(name, func(t *testing.T) {
-			assert.NoError(t, c.Ping(ctx))
+func stubFactory(_ context.Context, u *url.URL) (Cache, error) { return stub{u}, nil }
 
-			_, err := c.Get(ctx, "k")
-			assert.ErrorIs(t, err, ErrNotFound)
-
-			require.NoError(t, c.Set(ctx, "k", "v", 0))
-			v, err := c.Get(ctx, "k")
-			assert.NoError(t, err)
-			assert.Equal(t, "v", v)
-
-			require.NoError(t, c.Set(ctx, "k", "v2", time.Hour))
-			v, _ = c.Get(ctx, "k")
-			assert.Equal(t, "v2", v)
-
-			require.NoError(t, c.Delete(ctx, "k"))
-			_, err = c.Get(ctx, "k")
-			assert.ErrorIs(t, err, ErrNotFound)
-		})
-	}
+func TestRegister(t *testing.T) {
+	reset(t)
+	Register("Fake", stubFactory)
+	assert.Equal(t, []string{"fake"}, Backends())
+	assert.Panics(t, func() { Register("fake", stubFactory) }, "duplicate")
+	assert.Panics(t, func() { Register("", stubFactory) }, "empty scheme")
+	assert.Panics(t, func() { Register("other", nil) }, "nil factory")
 }
 
-func TestCache_TTLExpires(t *testing.T) {
-	mr := miniredis.RunT(t)
-	r, err := New(ctx, Config{Backend: BackendRedis, Redis: []redis.Option{redis.WithAddr(mr.Addr())}})
-	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, "k", "v", time.Minute))
-	mr.FastForward(2 * time.Minute)
-	_, err = r.Get(ctx, "k")
-	assert.ErrorIs(t, err, ErrNotFound)
+func TestOpen(t *testing.T) {
+	reset(t)
+	Register("fake", stubFactory)
+	Register("alpha", stubFactory)
 
-	m, err := New(ctx, Config{InMemory: []inmemory.Option{inmemory.WithCleanupInterval(time.Hour)}})
+	c, err := Open(ctx, "FAKE://host:1234/3?x=y")
 	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, m.Close()) })
-	require.NoError(t, m.Set(ctx, "k", "v", 20*time.Millisecond))
-	time.Sleep(40 * time.Millisecond)
-	_, err = m.Get(ctx, "k")
-	assert.ErrorIs(t, err, ErrNotFound)
+	u := c.(stub).u
+	assert.Equal(t, "host:1234", u.Host)
+	assert.Equal(t, "/3", u.Path)
+
+	_, err = Open(ctx, "nope://h")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown backend "nope"`)
+	assert.Contains(t, err.Error(), "alpha, fake")
 }
 
-func TestRedisCache_ServerDown(t *testing.T) {
-	mr := miniredis.RunT(t)
-	c, err := New(ctx, Config{Backend: BackendRedis, Redis: []redis.Option{redis.WithAddr(mr.Addr())}})
-	require.NoError(t, err)
-	mr.Close()
-
-	_, err = c.Get(ctx, "k")
-	assert.Error(t, err)
-	assert.NotErrorIs(t, err, ErrNotFound, "a broken connection is not a cache miss")
-	assert.Error(t, c.Set(ctx, "k", "v", 0))
-	assert.Error(t, c.Delete(ctx, "k"))
-	assert.Error(t, c.Ping(ctx))
+func TestOpen_BadDSNDoesNotLeakPassword(t *testing.T) {
+	_, err := Open(ctx, "redis://:s3cret@host:notaport")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "s3cret")
+	assert.NotContains(t, redactURLError(errors.New("plain")).Error(), "s3cret")
 }
 
-func TestNew(t *testing.T) {
-	t.Run("empty backend is in-memory", func(t *testing.T) {
-		c, err := New(ctx, Config{})
-		require.NoError(t, err)
-		assert.IsType(t, memoryCache{}, c)
-		assert.NoError(t, c.Close())
-	})
-	t.Run("in-memory ignores the redis settings", func(t *testing.T) {
-		t.Setenv(EnvBackend, "inmemory")
-		t.Setenv("REDIS_DB", "three")
-		c, err := FromEnv(ctx)
-		require.NoError(t, err)
-		_ = c.Close()
-	})
-	t.Run("unknown backend", func(t *testing.T) {
-		_, err := New(ctx, Config{Backend: "memcached"})
-		assert.ErrorContains(t, err, `unknown backend "memcached"`)
-	})
-	t.Run("redis unreachable", func(t *testing.T) {
-		_, err := New(ctx, Config{Backend: BackendRedis, Redis: []redis.Option{redis.WithAddr("127.0.0.1:1")}})
-		assert.Error(t, err)
-	})
+func TestOpen_FactoryError(t *testing.T) {
+	reset(t)
+	boom := errors.New("boom")
+	Register("bad", func(context.Context, *url.URL) (Cache, error) { return nil, boom })
+	_, err := Open(ctx, "bad:")
+	assert.ErrorIs(t, err, boom)
 }
 
 func TestFromEnv(t *testing.T) {
-	t.Run("default is in-memory", func(t *testing.T) {
+	reset(t)
+	Register("inmemory", stubFactory)
+	Register("fake", stubFactory)
+
+	t.Run("default is inmemory", func(t *testing.T) {
 		t.Setenv(EnvBackend, "")
+		t.Setenv(EnvURL, "")
 		c, err := FromEnv(ctx)
 		require.NoError(t, err)
-		assert.IsType(t, memoryCache{}, c)
-		_ = c.Close()
+		assert.Equal(t, "inmemory", c.(stub).u.Scheme)
 	})
-	t.Run("flag switches to redis and reads its settings", func(t *testing.T) {
-		mr := miniredis.RunT(t)
-		mr.RequireUserAuth("u", "p")
-		t.Setenv(EnvBackend, "redis")
-		t.Setenv("REDIS_ADDR", mr.Addr())
-		t.Setenv("REDIS_USERNAME", "u")
-		t.Setenv("REDIS_PASSWORD", "p")
-		t.Setenv("REDIS_DB", "3")
+	t.Run("backend name", func(t *testing.T) {
+		t.Setenv(EnvBackend, " Fake ")
+		t.Setenv(EnvURL, "")
 		c, err := FromEnv(ctx)
 		require.NoError(t, err)
-		t.Cleanup(func() { assert.NoError(t, c.Close()) })
-		assert.IsType(t, redisCache{}, c)
-		require.NoError(t, c.Set(ctx, "k", "v", 0))
-		mr.Select(3)
-		got, err := mr.Get("k")
-		assert.NoError(t, err)
-		assert.Equal(t, "v", got, "REDIS_DB is honoured")
+		u := c.(stub).u
+		assert.Equal(t, "fake", u.Scheme)
+		assert.Empty(t, u.Host, "named backends read their own environment")
 	})
-	t.Run("bad redis db", func(t *testing.T) {
-		t.Setenv(EnvBackend, "redis")
-		t.Setenv("REDIS_DB", "three")
-		_, err := FromEnv(ctx)
-		assert.ErrorContains(t, err, "bad REDIS_DB")
-	})
-	t.Run("in-memory ignores the redis settings", func(t *testing.T) {
+	t.Run("url wins over backend", func(t *testing.T) {
 		t.Setenv(EnvBackend, "inmemory")
-		t.Setenv("REDIS_DB", "three")
+		t.Setenv(EnvURL, "fake://h:1")
 		c, err := FromEnv(ctx)
 		require.NoError(t, err)
-		_ = c.Close()
+		assert.Equal(t, "h:1", c.(stub).u.Host)
 	})
 	t.Run("unknown backend", func(t *testing.T) {
-		t.Setenv(EnvBackend, "etcd")
+		t.Setenv(EnvBackend, "nope")
+		t.Setenv(EnvURL, "")
 		_, err := FromEnv(ctx)
 		assert.Error(t, err)
 	})

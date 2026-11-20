@@ -70,7 +70,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Run tests with race detector
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+        run: go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Enforce coverage threshold
         run: |
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$3); print $3}')

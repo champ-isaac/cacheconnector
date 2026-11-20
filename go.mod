@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/alicebob/miniredis/v2 v2.40.0
+	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/stretchr/testify v1.11.1
 )
