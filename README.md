@@ -8,7 +8,7 @@ Module path: `github.com/champ-isaac/cacheconnector`. Needs Go 1.26.
 
 | Package | What it does |
 |---|---|
-| `cache` (root) | The `Cache` interface (`Get`, `Set`, `Delete`, `Ping`, `Close`), `ErrNotFound`, and the registry: `FromFile(ctx, path)`, `FromConfig(ctx, Config)`, `Open(ctx, dsn)`, `FromEnv(ctx)`, `Register`, `Backends` |
+| `cache` (root) | The `Cache` interface (`Get`, `Set`, `Delete`, `Ping`, `Close`), `ErrNotFound`, and the registry: `FromFile(ctx, path)`, `ReadConfig(path)`, `FromConfig(ctx, Config)`, `Config.Resolved()`, `Open(ctx, dsn)`, `FromEnv(ctx)`, `Register`, `Backends` |
 | `inmemory` | Process-local map with TTL, swept in the background. Scheme `inmemory` |
 | `redis` | Scheme `redis` / `rediss` (TLS). Also `redis.Client` with options, `FromEnv` and `OptionsFromEnv` |
 | `valkey` | Scheme `valkey` / `valkeys` (TLS). Valkey speaks the Redis protocol, so it reuses the Redis client |
@@ -45,9 +45,9 @@ To use another driver, change `driver:` and restart the process. Nothing is reco
 
 - With only `driver:`, the backend reads its own settings from its environment variables (`REDIS_ADDR`, `MEMCACHED_ADDRS`, ...). With `url:`, the DSN carries them (see DSNs below).
 - **Neither `driver` nor `url` is an error.** An empty file, a file with only comments, and blank values all fail with `cache: config <path> sets neither driver nor url`. Nothing silently falls back to `inmemory`.
-- **`driver` and `url` must agree.** If both are set, the `url` scheme must be the driver name or its TLS variant (the name plus `s`, so `driver: redis` accepts `redis://` and `rediss://`). Anything else is an error, for example `driver: redis` with `url: memcached://host:11211` fails with `cache: driver "redis" does not match the url scheme "memcached"`. The error never prints the URL.
-- **One YAML document only.** A file with a second document (after a `---` line) is rejected with `cache: config <path> has more than one YAML document`, so the second one is never ignored silently.
-- Unknown keys are an error, so a typo such as `drivr:` fails at start-up instead of silently selecting a default.
+- **`driver` and `url` must agree.** If both are set, the `url` scheme must be the driver name or its TLS variant. Each backend declares its own TLS pair when it registers (see "Adding a backend"): `redis` declares `rediss` and `valkey` declares `valkeys`, so `driver: redis` accepts `redis://` and `rediss://`, but a typo such as `driver: redi` with `url: redis://…` is an error. Anything else is an error too, for example `driver: redis` with `url: memcached://host:11211` fails with `cache: driver "redis" does not match the url scheme "memcached"`. The error never prints the URL.
+- **One YAML document only.** A file with a second document that has content (after a `---` line) is rejected with `cache: config <path> has more than one YAML document`, so the second one is never ignored silently. Empty documents (nothing in them, or only a comment) are skipped wherever they are, so a stray `---` before the config or after it is accepted. A file that has only empty documents fails with the neither-`driver`-nor-`url` error above. A syntax error in a later document is reported as a syntax error (see below).
+- Unknown keys are an error, so a typo such as `drivr:` fails at start-up instead of silently selecting a default. The error does not name the key (see below).
 - **Unknown driver error.** A name that is not registered fails with this text (the list is what the `all` package registers):
 
   ```
@@ -55,11 +55,27 @@ To use another driver, change `driver:` and restart the process. Nothing is reco
   ```
 
   It names the driver you wrote and lists the registered drivers. It never echoes a DSN or URL: a value that is not a plain name, such as a DSN put in `driver:` by mistake, is shown as `(not a valid name)`, so a password in it does not reach logs. A DSN in `url:` with an unknown scheme is reported by its scheme only.
-- **Quote the DSN.** Some DSNs are not valid as plain YAML. For example `url: inmemory:` fails to parse ("mapping values are not allowed in this context"), so write `url: "inmemory:"`.
-- Errors never contain the file contents, because `url` may hold a password.
+- **Quote the DSN.** Some DSNs are not valid as plain YAML. For example `url: inmemory:` fails to parse with a YAML syntax error, so write `url: "inmemory:"`.
+- **YAML errors name the file and the stage, never the parser's message**, because that message can quote text from the file, such as a password. The two forms are `cache: parse config <path>: YAML syntax error` (the file is not valid YAML) and:
+
+  ```
+  cache: parse config <path>: invalid YAML content (expected one mapping with only the keys "driver" and "url", each set once, and text values)
+  ```
+
+  The second form is valid YAML that this config does not accept. One message covers every such case: an unknown key (such as `drivr:`), a duplicate key (`driver:` twice), a document that is not a mapping (a plain scalar such as `inmemory`, or a list), and a value that is not text (such as `driver: [redis]`). To find the problem, check the file yourself; the error gives no line number.
 - If your program already has its own config struct, embed `cache.Config` (it has the same `driver` and `url` yaml keys) and call `cache.FromConfig(ctx, cfg.Cache)`. The file is then read by your loader, not by this module. `FromConfig` checks that `driver` and `url` agree, as above. Only `FromFile` rejects a config that sets neither; `FromConfig` with both empty opens `inmemory`.
 - The driver is chosen once, when the program starts. Changing the file while the process runs has no effect.
 - The tradeoff: the binary contains every client library (go-redis, gomemcache), so it is bigger than one that imports a single backend.
+- **Which driver is running.** `Cache` has no name method, and `%T` cannot tell `redis` from `valkey` (both print `redis.adapter`). Read the resolved driver from the config instead. `Config.Resolved()` returns the backend name that `FromConfig` opens: the `url` scheme if `url` is set, else `driver`, else `inmemory`, in lower case. `FromFile` is `ReadConfig` followed by `FromConfig`, so to log the driver, call those two yourself:
+
+  ```go
+  cfg, err := cache.ReadConfig("cache.yaml")   // reads and checks the file, opens nothing
+  if err != nil { ... }
+  log.Printf("cache driver: %s", cfg.Resolved())
+  c, err := cache.FromConfig(ctx, cfg)         // same as cache.FromFile(ctx, "cache.yaml")
+  ```
+
+  With an embedded `cache.Config`, call `cfg.Cache.Resolved()` the same way. This is better than logging `cfg.Driver`, which is empty when the default applies and is overridden by `url`. `Resolved` does not check that the backend is registered or that `url` and `driver` agree; `FromConfig` does that. It returns `""` when the value is not a plain name or `url` does not parse, so a DSN never ends up in a log line. The `Cache` interface is unchanged, and the value returned by `FromFile` and `FromConfig` is the backend's own type, not a wrapper.
 - `FromEnv` does not use the agreement check: `CACHE_URL` still wins over `CACHE_BACKEND` (see Environment).
 
 ### Before you switch drivers
@@ -121,6 +137,17 @@ Write a type that implements `cache.Cache` and register a factory in `init`:
 ```go
 func init() { cache.Register("mystore", func(ctx context.Context, u *url.URL) (cache.Cache, error) { ... }) }
 ```
+
+If the backend also has a TLS scheme, register that scheme too and name it with `cache.WithTLS` on the plain one:
+
+```go
+func init() {
+    cache.Register("mystore", factory, cache.WithTLS("mystores")) // declares the pair
+    cache.Register("mystores", tlsFactory)                        // the TLS scheme still needs its own Register
+}
+```
+
+`WithTLS` only records that `mystores` is the TLS variant of `mystore`. With it, a config file with `driver: mystore` accepts `url: "mystores://…"` as well as `url: "mystore://…"`. Without it, a driver and a `url` with a different scheme are an error, because `driver` and `url` must agree. `Register` panics, and leaves the registry unchanged, if the `WithTLS` scheme is empty or the same as the scheme, or if the scheme is registered twice. A call with no option works as before. The `redis` and `valkey` packages declare their pairs this way (`cache.WithTLS("rediss")` and `cache.WithTLS("valkeys")`). The root package holds no TLS pair of its own. (It still names `inmemory`, as the default when nothing else is set.)
 
 Then run it through `cachetest.Run(t, newCache, advance)` in its tests. That is what keeps the backends interchangeable.
 

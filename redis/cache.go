@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	cache.Register("redis", Factory("REDIS", false))
+	cache.Register("redis", Factory("REDIS", false), cache.WithTLS("rediss"))
 	cache.Register("rediss", Factory("REDIS", true))
 }
 
