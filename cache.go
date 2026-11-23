@@ -2,17 +2,20 @@
 // Redis, Valkey, Memcached and an in-process memory cache.
 //
 // The root package has no backend dependency. Each backend lives in its own
-// package and registers itself in init, the way database/sql drivers do, so
-// a program only compiles the drivers it imports:
+// package and registers itself in init, the way database/sql drivers do.
+// Import the "all" package to compile every backend into one binary, then
+// choose the backend by name at start-up from a config file:
 //
 //	import (
 //		"github.com/champ-isaac/cacheconnector"
-//		_ "github.com/champ-isaac/cacheconnector/redis"
+//		_ "github.com/champ-isaac/cacheconnector/all"
 //	)
 //
-//	c, err := cache.Open(ctx, "redis://:secret@127.0.0.1:6379/0")
+//	c, err := cache.FromFile(ctx, "cache.yaml") // driver: redis
 //
-// Import github.com/champ-isaac/cacheconnector/all to get every backend.
+// Changing the driver in the file and restarting selects the new backend;
+// nothing is recompiled. A program that wants a smaller binary imports only
+// the backend packages it needs, for example _ ".../redis".
 package cache
 
 import (

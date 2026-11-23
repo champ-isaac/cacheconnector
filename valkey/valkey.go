@@ -12,6 +12,6 @@ import (
 )
 
 func init() {
-	cache.Register("valkey", redis.Factory("VALKEY", false))
+	cache.Register("valkey", redis.Factory("VALKEY", false), cache.WithTLS("valkeys"))
 	cache.Register("valkeys", redis.Factory("VALKEY", true))
 }

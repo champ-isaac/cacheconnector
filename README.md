@@ -1,6 +1,6 @@
 # Cache service
 
-A small Go module with one `cache.Cache` interface over several key/value backends: **Redis**, **Valkey**, **Memcached** and **in-memory**. A program picks the backend with a DSN or an environment variable, and only the backends it imports are compiled in. For Redis-specific features there is also `redis.Client` (go-redis v9). The module owns the connection settings: other programs load them through it and do not define their own.
+A small Go module with one `cache.Cache` interface over several key/value backends: **Redis**, **Valkey**, **Memcached** and **in-memory**. One binary can hold every backend, and the program picks one at start-up from a YAML config file (or a DSN, or an environment variable). Changing the driver is a config edit and a restart, not a rebuild. A program that wants a smaller binary can import only the backends it needs. For Redis-specific features there is also `redis.Client` (go-redis v9). The module owns the connection settings: other programs load them through it and do not define their own.
 
 Module path: `github.com/champ-isaac/cacheconnector`. Needs Go 1.26.
 
@@ -8,28 +8,87 @@ Module path: `github.com/champ-isaac/cacheconnector`. Needs Go 1.26.
 
 | Package | What it does |
 |---|---|
-| `cache` (root) | The `Cache` interface (`Get`, `Set`, `Delete`, `Ping`, `Close`), `ErrNotFound`, and the registry: `Open(ctx, dsn)`, `FromEnv(ctx)`, `Register`, `Backends` |
+| `cache` (root) | The `Cache` interface (`Get`, `Set`, `Delete`, `Ping`, `Close`), `ErrNotFound`, and the registry: `FromFile(ctx, path)`, `ReadConfig(path)`, `FromConfig(ctx, Config)`, `Config.Resolved()`, `Open(ctx, dsn)`, `FromEnv(ctx)`, `Register`, `Backends` |
 | `inmemory` | Process-local map with TTL, swept in the background. Scheme `inmemory` |
 | `redis` | Scheme `redis` / `rediss` (TLS). Also `redis.Client` with options, `FromEnv` and `OptionsFromEnv` |
 | `valkey` | Scheme `valkey` / `valkeys` (TLS). Valkey speaks the Redis protocol, so it reuses the Redis client |
 | `memcached` | Scheme `memcached`, on gomemcache |
-| `all` | Blank-imports every backend above |
+| `all` | Blank-imports every backend above. Import it to get all drivers in one binary |
 | `cachetest` | The behaviour every backend must have, run from each backend's tests |
 
-The root package has no backend dependency. Each backend registers itself in `init`, like a `database/sql` driver, so import the ones you use:
+The root package has no backend dependency. Each backend registers itself in `init`, like a `database/sql` driver. Import `all` to compile in every driver and choose one at run time:
 
 ```go
 import (
     "github.com/champ-isaac/cacheconnector"
-    _ "github.com/champ-isaac/cacheconnector/redis"   // or valkey, memcached, inmemory, or all
+    _ "github.com/champ-isaac/cacheconnector/all"   // or just one: .../redis, .../valkey, ...
 )
 ```
+
+## Choosing the driver from a config file
+
+The usual way to use the module. Compile with `all`, name the driver in a YAML file, and read it at start-up:
+
+```yaml
+# cache.yaml
+driver: redis                          # inmemory | redis | valkey | memcached
+url: "redis://:secret@10.0.0.5:6379/0"  # optional DSN. Its scheme must agree with driver
+```
+
+Set `driver`, `url`, or both. A file that sets neither is an error.
+
+```go
+c, err := cache.FromFile(ctx, "cache.yaml")
+```
+
+To use another driver, change `driver:` and restart the process. Nothing is recompiled, because every driver is already in the binary and `FromFile` only looks the name up in the registry.
+
+- With only `driver:`, the backend reads its own settings from its environment variables (`REDIS_ADDR`, `MEMCACHED_ADDRS`, ...). With `url:`, the DSN carries them (see DSNs below).
+- **Neither `driver` nor `url` is an error.** An empty file, a file with only comments, and blank values all fail with `cache: config <path> sets neither driver nor url`. Nothing silently falls back to `inmemory`.
+- **`driver` and `url` must agree.** If both are set, the `url` scheme must be the driver name or its TLS variant. Each backend declares its own TLS pair when it registers (see "Adding a backend"): `redis` declares `rediss` and `valkey` declares `valkeys`, so `driver: redis` accepts `redis://` and `rediss://`, but a typo such as `driver: redi` with `url: redis://…` is an error. Anything else is an error too, for example `driver: redis` with `url: memcached://host:11211` fails with `cache: driver "redis" does not match the url scheme "memcached"`. The error never prints the URL.
+- **One YAML document only.** A file with a second document that has content (after a `---` line) is rejected with `cache: config <path> has more than one YAML document`, so the second one is never ignored silently. Empty documents (nothing in them, or only a comment) are skipped wherever they are, so a stray `---` before the config or after it is accepted. A file that has only empty documents fails with the neither-`driver`-nor-`url` error above. A syntax error in a later document is reported as a syntax error (see below).
+- Unknown keys are an error, so a typo such as `drivr:` fails at start-up instead of silently selecting a default. The error does not name the key (see below).
+- **Unknown driver error.** A name that is not registered fails with this text (the list is what the `all` package registers):
+
+  ```
+  cache: unknown backend "nope" (registered: inmemory, memcached, redis, rediss, valkey, valkeys); did you import its package?
+  ```
+
+  It names the driver you wrote and lists the registered drivers. It never echoes a DSN or URL: a value that is not a plain name, such as a DSN put in `driver:` by mistake, is shown as `(not a valid name)`, so a password in it does not reach logs. A DSN in `url:` with an unknown scheme is reported by its scheme only.
+- **Quote the DSN.** Some DSNs are not valid as plain YAML. For example `url: inmemory:` fails to parse with a YAML syntax error, so write `url: "inmemory:"`.
+- **YAML errors name the file and the stage, never the parser's message**, because that message can quote text from the file, such as a password. The two forms are `cache: parse config <path>: YAML syntax error` (the file is not valid YAML) and:
+
+  ```
+  cache: parse config <path>: invalid YAML content (expected one mapping with only the keys "driver" and "url", each set once, and text values)
+  ```
+
+  The second form is valid YAML that this config does not accept. One message covers every such case: an unknown key (such as `drivr:`), a duplicate key (`driver:` twice), a document that is not a mapping (a plain scalar such as `inmemory`, or a list), and a value that is not text (such as `driver: [redis]`). To find the problem, check the file yourself; the error gives no line number.
+- If your program already has its own config struct, embed `cache.Config` (it has the same `driver` and `url` yaml keys) and call `cache.FromConfig(ctx, cfg.Cache)`. The file is then read by your loader, not by this module. `FromConfig` checks that `driver` and `url` agree, as above. Only `FromFile` rejects a config that sets neither; `FromConfig` with both empty opens `inmemory`.
+- The driver is chosen once, when the program starts. Changing the file while the process runs has no effect.
+- The tradeoff: the binary contains every client library (go-redis, gomemcache), so it is bigger than one that imports a single backend.
+- **Which driver is running.** `Cache` has no name method, and `%T` cannot tell `redis` from `valkey` (both print `redis.adapter`). Read the resolved driver from the config instead. `Config.Resolved()` returns the backend name that `FromConfig` opens: the `url` scheme if `url` is set, else `driver`, else `inmemory`, in lower case. `FromFile` is `ReadConfig` followed by `FromConfig`, so to log the driver, call those two yourself:
+
+  ```go
+  cfg, err := cache.ReadConfig("cache.yaml")   // reads and checks the file, opens nothing
+  if err != nil { ... }
+  log.Printf("cache driver: %s", cfg.Resolved())
+  c, err := cache.FromConfig(ctx, cfg)         // same as cache.FromFile(ctx, "cache.yaml")
+  ```
+
+  With an embedded `cache.Config`, call `cfg.Cache.Resolved()` the same way. This is better than logging `cfg.Driver`, which is empty when the default applies and is overridden by `url`. `Resolved` does not check that the backend is registered or that `url` and `driver` agree; `FromConfig` does that. It returns `""` when the value is not a plain name or `url` does not parse, so a DSN never ends up in a log line. The `Cache` interface is unchanged, and the value returned by `FromFile` and `FromConfig` is the backend's own type, not a wrapper.
+- `FromEnv` does not use the agreement check: `CACHE_URL` still wins over `CACHE_BACKEND` (see Environment).
+
+### Before you switch drivers
+
+- **Switching is a data migration, not a toggle.** In a rolling restart, replicas on `inmemory` and replicas on `redis` do not share deletes, so reads can be stale for up to the TTL. The new driver also starts empty, so the origin of the data can see a burst of load, and this module has no protection against that. Try a rolling restart in staging first.
+- **The drivers are not fully interchangeable.** Memcached rejects keys longer than 250 bytes or with spaces or control characters (`memcache.ErrMalformedKey`), and it rounds a TTL up to whole seconds. A switch to memcached can start fine and then fail at the first `Set` with such a key, not at start-up. Test the switch in staging. More in "Backend differences" below.
 
 ## Use
 
 ```go
 c, err := cache.Open(ctx, "redis://:secret@127.0.0.1:6379/0")
-// or let the environment decide:
+// or let a config file decide (see above), or the environment:
+c, err = cache.FromFile(ctx, "cache.yaml")
 c, err = cache.FromEnv(ctx)
 defer c.Close()
 
@@ -54,7 +113,7 @@ An error from `Open` never contains the DSN, because it can hold a password.
 
 ### Environment
 
-`cache.FromEnv` opens `CACHE_URL` if it is set. Otherwise it opens the backend named by `CACHE_BACKEND` (default `inmemory`), and that backend reads its own variables. Unset or empty keeps the default.
+`cache.FromEnv` is the same lookup with the values taken from the environment instead of a file. It opens `CACHE_URL` if it is set. Otherwise it opens the backend named by `CACHE_BACKEND` (default `inmemory`), and that backend reads its own variables. Unset or empty keeps the default.
 
 | Variable | Meaning | Default |
 |---|---|---|
@@ -78,6 +137,17 @@ Write a type that implements `cache.Cache` and register a factory in `init`:
 ```go
 func init() { cache.Register("mystore", func(ctx context.Context, u *url.URL) (cache.Cache, error) { ... }) }
 ```
+
+If the backend also has a TLS scheme, register that scheme too and name it with `cache.WithTLS` on the plain one:
+
+```go
+func init() {
+    cache.Register("mystore", factory, cache.WithTLS("mystores")) // declares the pair
+    cache.Register("mystores", tlsFactory)                        // the TLS scheme still needs its own Register
+}
+```
+
+`WithTLS` only records that `mystores` is the TLS variant of `mystore`. With it, a config file with `driver: mystore` accepts `url: "mystores://…"` as well as `url: "mystore://…"`. Without it, a driver and a `url` with a different scheme are an error, because `driver` and `url` must agree. `Register` panics, and leaves the registry unchanged, if the `WithTLS` scheme is empty or the same as the scheme, or if the scheme is registered twice. A call with no option works as before. The `redis` and `valkey` packages declare their pairs this way (`cache.WithTLS("rediss")` and `cache.WithTLS("valkeys")`). The root package holds no TLS pair of its own. (It still names `inmemory`, as the default when nothing else is set.)
 
 Then run it through `cachetest.Run(t, newCache, advance)` in its tests. That is what keeps the backends interchangeable.
 
@@ -107,7 +177,7 @@ Redis and Valkey run against miniredis, and Memcached against an in-process fake
 
 ## Architecture
 
-How the packages fit together. Backends depend on the root package, never the other way round, which is why a program compiles only the backends it imports.
+How the packages fit together. Backends depend on the root package, never the other way round, so the root stays free of backend code and a program can import one backend or all of them. With `all`, every backend is in the binary and the config file picks one by name when the program starts.
 
 ```mermaid
 flowchart TB
@@ -115,7 +185,7 @@ flowchart TB
 
     subgraph core["cache (root package, no backend imports)"]
         iface["Cache interface<br/>Get / Set / Delete / Ping / Close"]
-        reg["Registry<br/>Open / FromEnv / Register / Backends"]
+        reg["Registry<br/>FromFile / FromConfig / Open / FromEnv<br/>Register / Backends"]
     end
 
     subgraph backends["Backends: each registers its DSN scheme in init()"]
@@ -134,7 +204,9 @@ flowchart TB
     vs[("Valkey server")]
     ms[("Memcached server")]
 
-    app -->|"cache.Open(dsn) or FromEnv()"| reg
+    cfg[/"cache.yaml<br/>driver: redis"/]
+    cfg -->|"read at start-up"| reg
+    app -->|"cache.FromFile(path), Open(dsn) or FromEnv()"| reg
     app -.->|"or import _ all"| all
     all --> backends
     backends -->|"Register(scheme, factory)"| reg
