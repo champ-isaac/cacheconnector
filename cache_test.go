@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -108,4 +110,95 @@ func TestFromEnv(t *testing.T) {
 		_, err := FromEnv(ctx)
 		assert.Error(t, err)
 	})
+}
+
+func writeConfig(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "cache.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(body), 0o600))
+	return p
+}
+
+func TestFromFile(t *testing.T) {
+	reset(t)
+	Register("inmemory", stubFactory)
+	Register("fake", stubFactory)
+
+	t.Run("driver name", func(t *testing.T) {
+		c, err := FromFile(ctx, writeConfig(t, "driver: Fake\n"))
+		require.NoError(t, err)
+		assert.Equal(t, "fake", c.(stub).u.Scheme)
+	})
+	t.Run("url with a matching driver", func(t *testing.T) {
+		c, err := FromFile(ctx, writeConfig(t, "driver: fake\nurl: fake://h:1\n"))
+		require.NoError(t, err)
+		assert.Equal(t, "h:1", c.(stub).u.Host)
+	})
+	t.Run("unknown driver", func(t *testing.T) {
+		_, err := FromFile(ctx, writeConfig(t, "driver: nope\n"))
+		assert.ErrorContains(t, err, `unknown backend "nope"`)
+	})
+	t.Run("typo in key", func(t *testing.T) {
+		_, err := FromFile(ctx, writeConfig(t, "drivr: fake\n"))
+		assert.ErrorContains(t, err, "drivr")
+	})
+	t.Run("bad yaml does not leak secrets", func(t *testing.T) {
+		_, err := FromFile(ctx, writeConfig(t, "url: [redis://:s3cret@h\n"))
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "s3cret")
+	})
+	t.Run("missing file", func(t *testing.T) {
+		_, err := FromFile(ctx, filepath.Join(t.TempDir(), "none.yaml"))
+		assert.ErrorContains(t, err, "read config")
+	})
+}
+
+// DES-1: a DSN put in driver by mistake must not reach the error text.
+func TestFromFile_DriverHoldingDSNDoesNotLeak(t *testing.T) {
+	reset(t)
+	Register("fake", stubFactory)
+	_, err := FromFile(ctx, writeConfig(t, "driver: redis://:s3cret@h:1\n"))
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "s3cret")
+	assert.NotContains(t, err.Error(), "redis://")
+}
+
+// DES-2: url and driver that disagree are an error, and the error does not
+// echo the url.
+func TestFromFile_URLAndDriverDisagree(t *testing.T) {
+	reset(t)
+	Register("fake", stubFactory)
+	Register("fakes", stubFactory)
+	Register("other", stubFactory)
+
+	_, err := FromFile(ctx, writeConfig(t, "driver: other\nurl: fake://:s3cret@h:1\n"))
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "s3cret")
+
+	_, err = FromFile(ctx, writeConfig(t, "driver: fake\nurl: fakes://h:1\n"))
+	assert.NoError(t, err, "a TLS variant of the driver's scheme agrees")
+}
+
+// DES-3: a file that names neither driver nor url is an error, not a silent
+// default.
+func TestFromFile_NeitherDriverNorURL(t *testing.T) {
+	reset(t)
+	Register("inmemory", stubFactory)
+	for name, body := range map[string]string{
+		"empty file":    "",
+		"comments only": "# nothing here\n",
+		"blank values":  "driver: \"  \"\nurl: \"\"\n",
+	} {
+		_, err := FromFile(ctx, writeConfig(t, body))
+		assert.Error(t, err, name)
+	}
+}
+
+// DES-5: a second YAML document must not be silently ignored.
+func TestFromFile_SecondDocumentRejected(t *testing.T) {
+	reset(t)
+	Register("fake", stubFactory)
+	Register("other", stubFactory)
+	_, err := FromFile(ctx, writeConfig(t, "driver: fake\n---\ndriver: other\n"))
+	assert.ErrorContains(t, err, "more than one YAML document")
 }

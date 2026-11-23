@@ -1,13 +1,19 @@
 package cache
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -69,18 +75,82 @@ func Open(ctx context.Context, dsn string) (Cache, error) {
 	return open(ctx, u)
 }
 
-// FromEnv opens the cache named by CACHE_URL, or else by CACHE_BACKEND
-// (default "inmemory"), in which case the backend reads its own settings
-// from its environment variables, for example REDIS_ADDR.
-func FromEnv(ctx context.Context) (Cache, error) {
-	if dsn := strings.TrimSpace(os.Getenv(EnvURL)); dsn != "" {
+// Config selects a backend by name. It is what a config file holds, and a
+// project can embed it in its own config struct (it carries yaml tags):
+//
+//	driver: redis                    # inmemory, redis, valkey or memcached; default inmemory
+//	url: redis://:pw@host:6379/1     # optional DSN; its scheme must agree with driver
+//
+// With only a driver name, the backend reads its own settings from its
+// environment variables, for example REDIS_ADDR.
+type Config struct {
+	Driver string `yaml:"driver"`
+	URL    string `yaml:"url"`
+}
+
+// FromConfig opens the backend that c names. Backends must be registered
+// first, usually by importing the "all" package. When both URL and Driver are
+// set, the URL scheme must be the driver name or its TLS variant (the name
+// plus "s", as in redis and rediss); otherwise it is an error.
+func FromConfig(ctx context.Context, c Config) (Cache, error) {
+	if dsn, name := strings.TrimSpace(c.URL), strings.ToLower(strings.TrimSpace(c.Driver)); dsn != "" && name != "" {
+		// A parse error is left for Open to report, without the DSN.
+		if u, err := url.Parse(dsn); err == nil {
+			if scheme := strings.ToLower(u.Scheme); scheme != name && scheme != name+"s" {
+				return nil, fmt.Errorf("cache: driver %s does not match the url scheme %q", shown(name), scheme)
+			}
+		}
+	}
+	return openConfig(ctx, c)
+}
+
+// openConfig is FromConfig without the agreement check: a URL, when set,
+// wins. FromEnv keeps this documented rule for CACHE_URL over CACHE_BACKEND.
+func openConfig(ctx context.Context, c Config) (Cache, error) {
+	if dsn := strings.TrimSpace(c.URL); dsn != "" {
 		return Open(ctx, dsn)
 	}
-	name := strings.ToLower(strings.TrimSpace(os.Getenv(EnvBackend)))
+	name := strings.ToLower(strings.TrimSpace(c.Driver))
 	if name == "" {
 		name = defaultBackend
 	}
 	return open(ctx, &url.URL{Scheme: name})
+}
+
+// FromFile reads a YAML file holding a Config and opens the backend it names.
+// Unknown keys are an error, so a typo does not silently select the default.
+// A file that sets neither driver nor url is an error too, as is a file with
+// more than one YAML document. The error never contains file contents,
+// because they may hold a password.
+func FromFile(ctx context.Context, path string) (Cache, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("cache: read config: %w", err)
+	}
+	var c Config
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	switch err := dec.Decode(&c); {
+	case errors.Is(err, io.EOF): // empty file; caught below
+	case err != nil:
+		return nil, fmt.Errorf("cache: parse config %s: %w", path, err)
+	default:
+		var extra yaml.Node
+		if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("cache: config %s has more than one YAML document", path)
+		}
+	}
+	if strings.TrimSpace(c.Driver) == "" && strings.TrimSpace(c.URL) == "" {
+		return nil, fmt.Errorf("cache: config %s sets neither driver nor url", path)
+	}
+	return FromConfig(ctx, c)
+}
+
+// FromEnv opens the cache named by CACHE_URL, or else by CACHE_BACKEND
+// (default "inmemory"), in which case the backend reads its own settings
+// from its environment variables, for example REDIS_ADDR.
+func FromEnv(ctx context.Context) (Cache, error) {
+	return openConfig(ctx, Config{Driver: os.Getenv(EnvBackend), URL: os.Getenv(EnvURL)})
 }
 
 func open(ctx context.Context, u *url.URL) (Cache, error) {
@@ -89,10 +159,22 @@ func open(ctx context.Context, u *url.URL) (Cache, error) {
 	f, ok := factories[scheme]
 	mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("cache: unknown backend %q (registered: %s); did you import its package?",
-			scheme, strings.Join(Backends(), ", "))
+		return nil, fmt.Errorf("cache: unknown backend %s (registered: %s); did you import its package?",
+			shown(scheme), strings.Join(Backends(), ", "))
 	}
 	return f(ctx, u)
+}
+
+// shown quotes a driver name for an error message. A value that is not a
+// plain name, such as a DSN put in driver by mistake, may hold a password, so
+// it is not echoed.
+func shown(name string) string {
+	for _, r := range name {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.' || r == '_') {
+			return "(not a valid name)"
+		}
+	}
+	return strconv.Quote(name)
 }
 
 // redactURLError drops the URL that url.Parse errors quote, since a DSN can
