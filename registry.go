@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -123,7 +124,9 @@ func openConfig(ctx context.Context, c Config) (Cache, error) {
 // more than one YAML document. The error never contains file contents,
 // because they may hold a password.
 func FromFile(ctx context.Context, path string) (Cache, error) {
-	b, err := os.ReadFile(path)
+	// path is operator-supplied configuration (not untrusted input) and may
+	// legitimately be any path, so os.Root scoping does not apply.
+	b, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- trusted config path
 	if err != nil {
 		return nil, fmt.Errorf("cache: read config: %w", err)
 	}
@@ -170,7 +173,9 @@ func open(ctx context.Context, u *url.URL) (Cache, error) {
 // it is not echoed.
 func shown(name string) string {
 	for _, r := range name {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.' || r == '_') {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '+', r == '-', r == '.', r == '_':
+		default:
 			return "(not a valid name)"
 		}
 	}

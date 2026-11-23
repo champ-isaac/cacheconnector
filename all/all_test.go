@@ -30,7 +30,7 @@ func TestFromFileSwitchesDriver(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte("driver: "+driver+"\n"), 0o600))
 		c, err := cache.FromFile(context.Background(), path)
 		require.NoError(t, err)
-		defer c.Close()
+		defer func() { require.NoError(t, c.Close()) }()
 		return fmt.Sprintf("%T", c)
 	}
 	assert.NotEqual(t, kind("inmemory"), kind("redis"))
