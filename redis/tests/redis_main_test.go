@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	RedisHost = "127.0.0.1:6379"
+	RedisHost = "127.0.0.1:6381"
 )
 
 var (

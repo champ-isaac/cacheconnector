@@ -43,6 +43,16 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
+      # Compile and lint the files behind the integration build tag
+      # (redis/tests, valkey/tests, memcached/tests). This starts no servers and
+      # runs none of those tests; they need the docker compose stack.
+      - name: go vet (integration tag)
+        run: go vet -tags integration ./...
+      - name: golangci-lint (integration tag)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+          args: --build-tags integration
 
   security:
     name: Security

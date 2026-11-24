@@ -119,7 +119,12 @@ func expiration(ttl time.Duration, now time.Time) int32 {
 	if ttl <= 0 {
 		return 0
 	}
-	secs := int64((ttl + time.Second - 1) / time.Second)
+	// Round up without adding to ttl: ttl + time.Second - 1 overflows for a
+	// ttl near the largest Duration.
+	secs := int64(ttl / time.Second)
+	if ttl%time.Second != 0 {
+		secs++
+	}
 	if ttl > maxRelativeTTL {
 		secs += now.Unix()
 	}

@@ -126,7 +126,8 @@ Values are trimmed. A bad `REDIS_DB` is reported by name, and an empty password 
 
 ### Backend differences
 
-- **Memcached** counts TTL in whole seconds, so a ttl is rounded up (an entry never lives shorter than asked). Keys are at most 250 bytes with no spaces or control characters. The client has no context support: `ctx` is checked before each call and `timeout` bounds a call.
+- **Memcached** counts TTL in whole seconds, so a ttl is rounded up (an entry can still live up to one second shorter than asked). Memcached stores the expiry as a 32-bit Unix time, so a ttl that would end after 19 January 2038 (Unix time 2147483647, 03:14:07 UTC) is clamped to that moment. Keys are at most 250 bytes with no spaces or control characters (`memcache.ErrMalformedKey`), and the empty key is rejected too: the server refuses it, and `Get`, `Set` and `Delete` return an error that is neither `cache.ErrNotFound` nor `memcache.ErrMalformedKey`. Valkey, Redis and in-memory accept the empty key like any other. The client has no context support: `ctx` is checked before each call, so a deadline that passes during a call does not cut it short, and `timeout` bounds a call.
+- **Valkey and Redis** honour a call's context deadline. A call stuck on a slow or silent server returns an error that wraps `context.DeadlineExceeded` when the deadline passes, instead of waiting for the client's read timeout. Memcached does not do this (see above).
 - **In-memory** is per process. It is for tests, local development and single-instance use, not for sharing between replicas.
 - Anything beyond the five methods, such as Redis hashes, pipelines and transactions, is on `redis.Client`, below.
 
@@ -168,12 +169,35 @@ Hashes, sets, pipelines and scan helpers are on `redis.Client` too. `Client.Pipe
 
 ```
 go test -race -coverpkg=./... -cover ./...                   # unit tests, 100% coverage
-docker compose up -d redis && go test -tags integration ./redis/tests   # against a real Redis
+docker compose up -d redis && go test -tags integration ./redis/tests   # against the redis container on 127.0.0.1:6381
+docker compose up -d valkey && go test -tags integration ./valkey/tests   # against the valkey container on 127.0.0.1:6380
+docker compose up -d memcached && go test -tags integration ./memcached/tests   # against the memcached container on 127.0.0.1:11211
+MEMCACHED_TEST_FLUSH=1 go test -tags integration ./memcached/tests   # same, when the memcached server already holds data (see below)
 ```
+
+The valkey tests connect with password `user` and use database 1, which they flush before and after the run, so data in other databases is left alone. Both new packages also run the shared `cachetest` contract, and its TTL cases sleep for real.
+
+Memcached has no databases, so the memcached tests flush the whole server before and after the run. To protect data they do not own, they first count the live items on `127.0.0.1:11211` and refuse to run if there are any, unless `MEMCACHED_TEST_FLUSH=1` is set. On an empty server (a fresh `memcached` container) the variable is not needed. If the server holds data, the tests need `MEMCACHED_TEST_FLUSH=1` to run, and it will be wiped. Run them only against the compose container.
 
 Redis and Valkey run against miniredis, and Memcached against an in-process fake server, so the unit tests need no Docker. `-coverpkg=./...` counts the shared `cachetest` package, which the backends exercise.
 
 `go.mod` is vendored locally (`vendor/` is not committed). Run `go mod vendor` after changing dependencies.
+
+### Docker compose services
+
+`docker-compose.yaml` starts a real server for each backend that needs one. `docker compose up -d` starts all of them; the unit tests above do not need any.
+
+| Service | Image | Host port → container port | Authentication | Settings for this module |
+|---|---|---|---|---|
+| `redis` | `redis:latest` | `6381` → `6379` | `--requirepass user` | the integration tests connect to `127.0.0.1:6381` as user `default` with password `user` |
+| `valkey` | `valkey/valkey:latest` | `6380` → `6379` | `--requirepass user` | `VALKEY_ADDR=127.0.0.1:6380 VALKEY_PASSWORD=user`, or the DSN `valkey://:user@127.0.0.1:6380/0` |
+| `memcached` | `memcached:latest` | `11211` → `11211` | none | `MEMCACHED_ADDRS=127.0.0.1:11211`, or the DSN `memcached://127.0.0.1:11211` |
+| `redis-ui` | `redis/redisinsight:latest` | `5540` → `5540` | n/a | RedisInsight web UI. It reaches `redis` with `RI_REDIS_HOST=redis`, `RI_REDIS_PORT=6379`, `RI_REDIS_USERNAME=default` and `RI_REDIS_PASSWORD=user` |
+
+- **Why `redis` is on host port 6381.** Host port 6379 is held by Colima's SSH forwarder for another running container, so the `redis` service is published on host port 6381 and container port 6379. Inside the compose network `redis` is still on 6379, which is why `redis-ui` uses `RI_REDIS_PORT=6379`. The Redis integration test uses `127.0.0.1:6381` for this reason.
+- **Why `valkey` is on host port 6380.** The container listens on 6379, and the host port is 6380, next to `redis` on 6381.
+- **`memcached`** has no authentication. 11211 is the default the memcached backend uses.
+- **`inmemory`** runs inside the Go process, so it has no container.
 
 ## Architecture
 

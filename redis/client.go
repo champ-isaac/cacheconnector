@@ -119,6 +119,9 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		MinIdleConns: client.minIdleConns,
 		ReadTimeout:  client.readTimeout,
 		WriteTimeout: client.writeTimeout,
+		// Without this go-redis ignores a call's context deadline on the socket
+		// and waits for ReadTimeout instead.
+		ContextTimeoutEnabled: true,
 	}
 	if client.username != "" {
 		rsOpts.Username = client.username
