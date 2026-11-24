@@ -199,6 +199,17 @@ Redis and Valkey run against miniredis, and Memcached against an in-process fake
 - **`memcached`** has no authentication. 11211 is the default the memcached backend uses.
 - **`inmemory`** runs inside the Go process, so it has no container.
 
+## Benchmarks
+
+[Benchmark.md](Benchmark.md) reports a five-round comparison of the backends: method, environment, one table per operation, and a summary. To run one round against the compose services:
+
+```
+docker compose up -d redis valkey memcached
+go test -tags integration -p 1 -run '^$' -bench . -benchmem -count=1 ./...   # one round; repeat for more rounds
+```
+
+The memcached benchmarks flush the whole server, with the same guard as the memcached tests above.
+
 ## Architecture
 
 How the packages fit together. Backends depend on the root package, never the other way round, so the root stays free of backend code and a program can import one backend or all of them. With `all`, every backend is in the binary and the config file picks one by name when the program starts.
