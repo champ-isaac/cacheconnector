@@ -135,14 +135,17 @@ func registry(ctx context.Context, dir string) {
 	_, err = cache.ReadConfig(bad)
 	check(err != nil && !strings.Contains(err.Error(), "typo"), "ReadConfig rejects an unknown key without echoing the file", fmt.Sprint(err))
 
-	os.Setenv(cache.EnvBackend, "inmemory")
-	os.Unsetenv(cache.EnvURL)
+	if err := os.Setenv(cache.EnvBackend, "inmemory"); err != nil {
+		check(false, "set CACHE_BACKEND for the FromEnv check", err.Error())
+		return
+	}
+	_ = os.Unsetenv(cache.EnvURL)
 	c, err = cache.FromEnv(ctx)
 	check(err == nil, "FromEnv with CACHE_BACKEND=inmemory", fmt.Sprint(err))
 	if c != nil {
 		_ = c.Close()
 	}
-	os.Unsetenv(cache.EnvBackend)
+	_ = os.Unsetenv(cache.EnvBackend)
 }
 
 func drive(ctx context.Context, t target, dir, run string) {
