@@ -14,14 +14,6 @@ import (
 	cache "github.com/champ-isaac/cacheconnector"
 )
 
-// A call's context deadline must end the call even when the server has gone
-// silent. This package has no client of its own: a valkey:// DSN is built by
-// redis.Factory, and go-redis only applies a context deadline to the socket when
-// ContextTimeoutEnabled is set in redis.New. Without it the call waits for the
-// client's default read timeout of 2s, and this test fails on the 1s limit.
-//
-// miniredis never hangs by itself, so a pre-command hook holds every command
-// once the test arms it.
 func TestGetHonoursContextDeadlineOnSilentServer(t *testing.T) {
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
@@ -34,11 +26,11 @@ func TestGetHonoursContextDeadlineOnSilentServer(t *testing.T) {
 	release := make(chan struct{})
 	mr.Server().SetPreHook(func(*server.Peer, string, ...string) bool {
 		if silent.Load() {
-			<-release // no reply until the test ends
+			<-release
 		}
 		return false
 	})
-	// Registered after RunT, so it runs first and lets mr.Close finish.
+
 	t.Cleanup(func() { close(release) })
 
 	silent.Store(true)

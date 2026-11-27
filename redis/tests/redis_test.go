@@ -29,7 +29,7 @@ type CacheData struct {
 	Timestamp time.Time `redis:"timestamp"`
 }
 
-func TestClient_HSet_N_HGetAllNScan(t *testing.T) {
+func TestClientHSetNHGetAllNScan(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		raw := fmt.Sprintf(vinFmt, randInt(minNum, maxNum))
 		value := CacheData{
@@ -73,7 +73,7 @@ func TestClient_HSet_N_HGetAllNScan(t *testing.T) {
 	}
 }
 
-func TestClient_KeyNotExist_HGetNScan(t *testing.T) {
+func TestClientKeyNotExistHGetNScan(t *testing.T) {
 	var out CacheData
 	err := client.HGetAllNScan(ctx, "Not_Exist", &out)
 	assert.NoError(t, err)

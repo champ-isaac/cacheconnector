@@ -12,8 +12,7 @@ import (
 	"github.com/champ-isaac/cacheconnector/cachetest"
 )
 
-// miniredis speaks the same protocol Valkey does.
-func TestCache_Contract(t *testing.T) {
+func TestCacheContract(t *testing.T) {
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	cachetest.Run(t, func(t *testing.T) cache.Cache {
@@ -28,11 +27,11 @@ func TestRegistered(t *testing.T) {
 	assert.Subset(t, cache.Backends(), []string{"valkey", "valkeys"})
 }
 
-func TestFromEnv_UsesValkeyVariables(t *testing.T) {
+func TestFromEnvUsesValkeyVariables(t *testing.T) {
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	t.Setenv("VALKEY_ADDR", mr.Addr())
-	t.Setenv("REDIS_ADDR", "127.0.0.1:1") // must not be used
+	t.Setenv("REDIS_ADDR", "127.0.0.1:1")
 	t.Setenv(cache.EnvBackend, "valkey")
 	t.Setenv(cache.EnvURL, "")
 

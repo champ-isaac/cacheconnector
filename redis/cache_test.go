@@ -13,7 +13,7 @@ import (
 	"github.com/champ-isaac/cacheconnector/cachetest"
 )
 
-func TestCache_Contract(t *testing.T) {
+func TestCacheContract(t *testing.T) {
 	mr := miniredis.RunT(t)
 	cachetest.Run(t, func(t *testing.T) cache.Cache {
 		mr.FlushAll()
@@ -23,7 +23,7 @@ func TestCache_Contract(t *testing.T) {
 	}, mr.FastForward)
 }
 
-func TestFactory_DSN(t *testing.T) {
+func TestFactoryDSN(t *testing.T) {
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	mr.RequireUserAuth("alice", "s3cret")
@@ -42,7 +42,7 @@ func TestFactory_DSN(t *testing.T) {
 	assert.NotContains(t, err.Error(), "wrong")
 }
 
-func TestFactory_TLS(t *testing.T) {
+func TestFactoryTLS(t *testing.T) {
 	ctx := context.Background()
 	addr, caPath := tlsServer(t)
 
@@ -57,7 +57,7 @@ func TestFactory_TLS(t *testing.T) {
 	assert.Error(t, err, "TLS needs a host")
 }
 
-func TestFactory_FromEnv(t *testing.T) {
+func TestFactoryFromEnv(t *testing.T) {
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	t.Setenv("REDIS_ADDR", mr.Addr())
@@ -74,14 +74,14 @@ func TestFactory_FromEnv(t *testing.T) {
 	assert.ErrorContains(t, err, "REDIS_DB")
 }
 
-func TestOptionsFromURL_BadDatabase(t *testing.T) {
+func TestOptionsFromURLBadDatabase(t *testing.T) {
 	for _, db := range []string{"/abc", "/-1"} {
 		_, err := OptionsFromURL(&url.URL{Scheme: "redis", Host: "h:1", Path: db}, "REDIS", false)
 		assert.Error(t, err, db)
 	}
 }
 
-func TestAdapter_UnreachableServer(t *testing.T) {
+func TestAdapterUnreachableServer(t *testing.T) {
 	mr := miniredis.RunT(t)
 	c, err := New(context.Background(), WithAddr(mr.Addr()))
 	require.NoError(t, err)
@@ -93,14 +93,14 @@ func TestAdapter_UnreachableServer(t *testing.T) {
 	assert.NoError(t, a.Close())
 }
 
-func TestOptionsFromURL_ServerNameDefaultsToHost(t *testing.T) {
+func TestOptionsFromURLServerNameDefaultsToHost(t *testing.T) {
 	opts, err := OptionsFromURL(&url.URL{Scheme: "rediss", Host: "cache.example.com:6380", RawQuery: "ca_cert=/ca.pem"}, "REDIS", true)
 	require.NoError(t, err)
 	c := &Client{}
 	for _, o := range opts {
 		o(c)
 	}
-	assert.Equal(t, "cache.example.com", c.servername)
+	assert.Equal(t, "cache.example.com", c.serverName)
 	assert.Equal(t, "/ca.pem", c.caCertPath)
-	assert.True(t, c.enableTls)
+	assert.True(t, c.enableTLS)
 }

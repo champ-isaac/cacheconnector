@@ -12,7 +12,7 @@ import (
 	"github.com/champ-isaac/cacheconnector/cachetest"
 )
 
-func TestCache_Contract(t *testing.T) {
+func TestCacheContract(t *testing.T) {
 	cachetest.Run(t, func(t *testing.T) cache.Cache {
 		return NewCache(New(WithCleanupInterval(time.Hour)))
 	}, nil)
@@ -36,7 +36,7 @@ func TestFactory(t *testing.T) {
 	}
 }
 
-func TestCache_CanceledContext(t *testing.T) {
+func TestCacheCanceledContext(t *testing.T) {
 	c := NewCache(New())
 	defer func() { assert.NoError(t, c.Close()) }()
 	ctx, cancel := context.WithCancel(context.Background())

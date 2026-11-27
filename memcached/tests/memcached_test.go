@@ -23,14 +23,11 @@ import (
 	"github.com/champ-isaac/cacheconnector/memcached"
 )
 
-// The shared contract every backend must pass, against a real Memcached. The
-// TTL cases sleep for real, because the server's clock cannot be moved.
-func TestCache_Contract(t *testing.T) {
+func TestCacheContract(t *testing.T) {
 	cachetest.Run(t, func(t *testing.T) cache.Cache { return newCache(t) }, nil)
 }
 
-// A DSN with no host reads MEMCACHED_ADDRS.
-func TestFromEnv_UsesMemcachedAddrs(t *testing.T) {
+func TestFromEnvUsesMemcachedAddrs(t *testing.T) {
 	t.Setenv("MEMCACHED_ADDRS", MemcachedHost)
 	t.Setenv(cache.EnvBackend, "memcached")
 	t.Setenv(cache.EnvURL, "")
@@ -41,22 +38,19 @@ func TestFromEnv_UsesMemcachedAddrs(t *testing.T) {
 
 	require.NoError(t, c.Ping(ctx))
 	require.NoError(t, c.Set(ctx, "env:key", []byte("v"), 0))
-	defer func() { assert.NoError(t, c.Delete(ctx, "env:key")) }() // runs before the Close above
+	defer func() { assert.NoError(t, c.Delete(ctx, "env:key")) }()
 	v, err := c.Get(ctx, "env:key")
 	require.NoError(t, err)
 	assert.Equal(t, []byte("v"), v)
 }
 
-// Memcached keys are at most 250 bytes, with no spaces or control characters.
-// A key that breaks the rule fails on every call, which the other backends do
-// not do.
 func TestKeyLimits(t *testing.T) {
 	c := newCache(t)
 	defer func() { assert.NoError(t, c.Close()) }()
 
 	okKey := strings.Repeat("k", 250)
 	require.NoError(t, c.Set(ctx, okKey, []byte("v"), 0))
-	defer func() { assert.NoError(t, c.Delete(ctx, okKey)) }() // runs before the Close above
+	defer func() { assert.NoError(t, c.Delete(ctx, okKey)) }()
 	_, err := c.Get(ctx, okKey)
 	assert.NoError(t, err, "a 250 byte key is allowed")
 
@@ -71,15 +65,13 @@ func TestKeyLimits(t *testing.T) {
 	}
 }
 
-// A key set through one connection is visible through another, so the data is
-// on the server and not in the client.
 func TestSetIsSharedAcrossConnections(t *testing.T) {
 	a, b := newCache(t), newCache(t)
 	defer func() { assert.NoError(t, a.Close()) }()
 	defer func() { assert.NoError(t, b.Close()) }()
 
 	require.NoError(t, a.Set(ctx, "shared", []byte("from-a"), 0))
-	defer func() { assert.NoError(t, a.Delete(ctx, "shared")) }() // runs before the Closes above
+	defer func() { assert.NoError(t, a.Delete(ctx, "shared")) }()
 	v, err := b.Get(ctx, "shared")
 	require.NoError(t, err)
 	assert.Equal(t, []byte("from-a"), v)
@@ -88,8 +80,6 @@ func TestSetIsSharedAcrossConnections(t *testing.T) {
 	assert.ErrorIs(t, err, cache.ErrNotFound)
 }
 
-// closedAddr returns a local address that nothing listens on: a port that was
-// free a moment ago.
 func closedAddr(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -99,15 +89,11 @@ func closedAddr(t *testing.T) string {
 	return addr
 }
 
-// A key is written into the protocol line, so a key holding CRLF could add
-// commands of its own. The client must refuse such a key, and the server must
-// see nothing of it. The attacks only add a set and a delete, so a failure
-// cannot wipe the server.
 func TestKeyInjectionIsRejected(t *testing.T) {
 	c := newCache(t)
 	defer func() { assert.NoError(t, c.Close()) }()
 	require.NoError(t, c.Set(ctx, "injection-canary", []byte("canary"), 0))
-	defer func() { assert.NoError(t, c.Delete(ctx, "injection-canary")) }() // runs before the Close above
+	defer func() { assert.NoError(t, c.Delete(ctx, "injection-canary")) }()
 	defer func() { assert.NoError(t, c.Delete(ctx, "injected")) }()
 
 	for name, key := range map[string]string{
@@ -125,8 +111,6 @@ func TestKeyInjectionIsRejected(t *testing.T) {
 	assert.Equal(t, []byte("canary"), v)
 }
 
-// Delete of a missing key is not an error, but Delete of a malformed key is:
-// it is not a missing key, it is a key the server cannot be asked about.
 func TestDeleteMalformedKeyIsAnError(t *testing.T) {
 	c := newCache(t)
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -140,8 +124,6 @@ func TestDeleteMalformedKeyIsAnError(t *testing.T) {
 	}
 }
 
-// Every call to a closed port fails, not only Get. Delete matters most: it must
-// not report "already gone" for a server that was never reached.
 func TestSetDeletePingOnClosedPort(t *testing.T) {
 	c := memcached.New([]string{closedAddr(t)}, memcached.WithTimeout(2*time.Second))
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -153,8 +135,6 @@ func TestSetDeletePingOnClosedPort(t *testing.T) {
 	assert.Less(t, time.Since(start), 5*time.Second, "each call fails within its 2s timeout")
 }
 
-// A server that cannot be reached is an error. It must not look like a miss,
-// or a caller would treat an outage as "not cached" and hit the real source.
 func TestGetOnClosedPortIsNotAMiss(t *testing.T) {
 	c := memcached.New([]string{closedAddr(t)}, memcached.WithTimeout(2*time.Second))
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -166,9 +146,6 @@ func TestGetOnClosedPortIsNotAMiss(t *testing.T) {
 	assert.Less(t, time.Since(start), 5*time.Second, "the call fails within its 2s timeout")
 }
 
-// Memcached refuses a value over its item limit (1 MiB by default) with a
-// server error, which the client returns from Set. The value is not stored, and
-// a failed overwrite also drops the value the key held before.
 func TestOversizedValueIsRejected(t *testing.T) {
 	c := newCache(t)
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -188,8 +165,6 @@ func TestOversizedValueIsRejected(t *testing.T) {
 	assert.ErrorIs(t, err, cache.ErrNotFound, "the failed overwrite also removed the old value")
 }
 
-// proxy forwards TCP connections from a local port to target, so a test can cut
-// the link while a client is connected and bring it back on the same address.
 type proxy struct {
 	l     net.Listener
 	mu    sync.Mutex
@@ -202,8 +177,6 @@ func startProxy(t *testing.T, target string) *proxy {
 	return startProxyAt(t, "127.0.0.1:0", target)
 }
 
-// startProxyAt listens on addr, so a test can bring a proxy back on the address
-// a stopped one used.
 func startProxyAt(t *testing.T, addr, target string) *proxy {
 	t.Helper()
 	l, err := net.Listen("tcp", addr)
@@ -232,7 +205,6 @@ func startProxyAt(t *testing.T, addr, target string) *proxy {
 
 func (p *proxy) addr() string { return p.l.Addr().String() }
 
-// stop closes the listener and every open connection. It is safe to call twice.
 func (p *proxy) stop() {
 	p.once.Do(func() {
 		_ = p.l.Close()
@@ -244,12 +216,9 @@ func (p *proxy) stop() {
 	})
 }
 
-// After an outage the client must reconnect by itself once the server is back,
-// not stay broken. The proxy is stopped, the client fails, and a new proxy takes
-// the same address.
 func TestRecoversAfterServerComesBack(t *testing.T) {
 	const key = "recovery-key"
-	direct := newCache(t) // not through the proxy, used to clean up
+	direct := newCache(t)
 	defer func() { assert.NoError(t, direct.Close()) }()
 	defer func() { assert.NoError(t, direct.Delete(ctx, key)) }()
 
@@ -273,8 +242,6 @@ func TestRecoversAfterServerComesBack(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "the client reads the key again once the server is back")
 }
 
-// hungAddr returns the address of a listener that accepts connections and never
-// replies, like a server that has hung. It is closed when the test ends.
 func hungAddr(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -303,8 +270,6 @@ func hungAddr(t *testing.T) string {
 	return l.Addr().String()
 }
 
-// A server that accepts the connection and never answers must produce an error
-// when the client's timeout passes, not block the caller.
 func TestGetOnHungServerReturnsAnError(t *testing.T) {
 	c := memcached.New([]string{hungAddr(t)}, memcached.WithTimeout(2*time.Second))
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -325,29 +290,19 @@ func TestGetOnHungServerReturnsAnError(t *testing.T) {
 	}
 }
 
-// Thirty days is the largest ttl the client sends as relative seconds; one
-// second more and it sends an absolute Unix time. So at exactly 30 days neither
-// that conversion nor the 2038 clamp applies. This test pins that boundary; it
-// is not a check of the 2038 limit.
-//
-// The server's metadump gives exp= as an absolute Unix time and la= as the last
-// access time, so the stored ttl is exp minus la. That does not depend on the
-// test host's clock matching the container's.
 func TestThirtyDayTTLIsStored(t *testing.T) {
 	c := newCache(t)
 	defer func() { assert.NoError(t, c.Close()) }()
 	const key = "thirty-day-ttl"
-	const thirtyDays = 30 * 24 * 60 * 60 // seconds
+	const thirtyDays = 30 * 24 * 60 * 60
 
 	require.NoError(t, c.Set(ctx, key, []byte("v"), thirtyDays*time.Second))
-	defer func() { assert.NoError(t, c.Delete(ctx, key)) }() // runs before the Close above
+	defer func() { assert.NoError(t, c.Delete(ctx, key)) }()
 
 	exp, la := metadumpValue(t, key, "exp"), metadumpValue(t, key, "la")
 	assert.InDelta(t, float64(thirtyDays), float64(exp-la), 5, "the stored ttl is 30 days")
 }
 
-// metadumpValue returns a numeric field, such as exp or la, from the key's line
-// in the server's metadump.
 func metadumpValue(t *testing.T, key, field string) int64 {
 	t.Helper()
 	lines, err := metadump()
@@ -370,24 +325,18 @@ func metadumpValue(t *testing.T, key, field string) int64 {
 	return 0
 }
 
-// Memcached stores the expiry as a 32-bit Unix time, so an expiry past
-// 19 January 2038 is clamped to 2147483647 (cache.go promises this). A
-// 100-year ttl would otherwise wrap or fail.
 func TestTTLBeyond2038IsClamped(t *testing.T) {
 	c := newCache(t)
 	defer func() { assert.NoError(t, c.Close()) }()
 	const key = "clamped-ttl"
 
 	require.NoError(t, c.Set(ctx, key, []byte("v"), 100*365*24*time.Hour))
-	defer func() { assert.NoError(t, c.Delete(ctx, key)) }() // runs before the Close above
+	defer func() { assert.NoError(t, c.Delete(ctx, key)) }()
 
 	assert.EqualValues(t, math.MaxInt32, metadumpValue(t, key, "exp"), "the expiry is clamped to 2147483647")
 }
 
-// The DSN's timeout= sets the per-call timeout. Against a server that never
-// replies the call must take about that long: not the 100ms default, which
-// would be faster, and not the 2s that newCache uses.
-func TestOpen_TimeoutOptionIsApplied(t *testing.T) {
+func TestOpenTimeoutOptionIsApplied(t *testing.T) {
 	c, err := cache.Open(ctx, "memcached://"+hungAddr(t)+"?timeout=300ms")
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -400,14 +349,11 @@ func TestOpen_TimeoutOptionIsApplied(t *testing.T) {
 	assert.Less(t, elapsed, time.Second, "and no longer than that")
 }
 
-// The DSN's server= adds a second server and keys are spread over both. With
-// the second one down, a key that hashes to it must fail on every call, never
-// look like a miss, and a key on the live server must work as usual.
-func TestOpen_ServerOptionWithOneServerDown(t *testing.T) {
+func TestOpenServerOptionWithOneServerDown(t *testing.T) {
 	c, err := cache.Open(ctx, "memcached://"+MemcachedHost+"?server="+closedAddr(t)+"&timeout=500ms")
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, c.Close()) }()
-	direct := newCache(t) // reaches only the live server, used to clean up
+	direct := newCache(t)
 	defer func() { assert.NoError(t, direct.Close()) }()
 
 	up, down := 0, 0
@@ -430,10 +376,6 @@ func TestOpen_ServerOptionWithOneServerDown(t *testing.T) {
 	assert.Positive(t, down, "some keys hash to the dead server")
 }
 
-// Close gives its connections back to the server. Ten clients are opened and
-// used, the server's connection count rises by at least ten, and after Close it
-// is back to where it started. The server notices a closed connection a moment
-// later, so both checks retry.
 func TestCloseReleasesConnections(t *testing.T) {
 	base, err := serverStat("curr_connections")
 	require.NoError(t, err)

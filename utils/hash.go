@@ -7,15 +7,15 @@ import (
 )
 
 type HashRing struct {
-	replica int
-	keys    []int
-	hashMap map[int]string
+	replicas   int
+	hashes     []int
+	nodeByHash map[int]string
 }
 
-func New(replica int) *HashRing {
+func New(replicas int) *HashRing {
 	return &HashRing{
-		replica: replica,
-		hashMap: make(map[int]string),
+		replicas:   replicas,
+		nodeByHash: make(map[int]string),
 	}
 }
 
@@ -24,25 +24,24 @@ func hashKey(key string) int {
 }
 
 func (h *HashRing) Add(node string) {
-	for i := 0; i < h.replica; i++ {
+	for i := 0; i < h.replicas; i++ {
 		virtualKey := hashKey(node + "#" + strconv.Itoa(i))
-		h.keys = append(h.keys, virtualKey)
-		h.hashMap[virtualKey] = node
+		h.hashes = append(h.hashes, virtualKey)
+		h.nodeByHash[virtualKey] = node
 	}
-	sort.Ints(h.keys)
+	sort.Ints(h.hashes)
 }
 
 func (h *HashRing) Get(key string) string {
-	if len(h.keys) == 0 {
+	if len(h.hashes) == 0 {
 		return ""
 	}
 	hash := hashKey(key)
-	idx := sort.Search(len(h.keys), func(i int) bool {
-		//check which range slot hash fit in
-		return h.keys[i] >= hash
+	idx := sort.Search(len(h.hashes), func(i int) bool {
+		return h.hashes[i] >= hash
 	})
-	if idx == len(h.keys) {
+	if idx == len(h.hashes) {
 		idx = 0
 	}
-	return h.hashMap[h.keys[idx]]
+	return h.nodeByHash[h.hashes[idx]]
 }

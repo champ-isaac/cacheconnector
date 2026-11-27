@@ -16,10 +16,6 @@ import (
 	cache "github.com/champ-isaac/cacheconnector"
 )
 
-// silentProxy forwards TCP connections to target until silence is called. After
-// that it reads what a client sends and drops it, so the connections stay open
-// and nothing comes back, like a dead network path. miniredis never hangs by
-// itself, so this is how a test makes a call wait on the server.
 type silentProxy struct {
 	l      net.Listener
 	silent atomic.Bool
@@ -47,7 +43,7 @@ func startSilentProxy(t *testing.T, target string) *silentProxy {
 			p.mu.Lock()
 			p.conns = append(p.conns, client, server)
 			p.mu.Unlock()
-			go func() { // client to server, dropped once silent
+			go func() {
 				buf := make([]byte, 32<<10)
 				for {
 					n, err := client.Read(buf)
@@ -80,10 +76,6 @@ func (p *silentProxy) stop() {
 	}
 }
 
-// A call's context deadline must end the call even when the server has gone
-// silent. go-redis only applies the deadline to the socket when
-// ContextTimeoutEnabled is set (see New); without it the call waits for the
-// client's read timeout, here 2s, and this test fails on the 1s limit.
 func TestGetHonoursContextDeadlineOnSilentLink(t *testing.T) {
 	mr := miniredis.RunT(t)
 	p := startSilentProxy(t, mr.Addr())

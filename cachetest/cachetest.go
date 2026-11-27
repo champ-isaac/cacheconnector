@@ -1,7 +1,3 @@
-// Package cachetest holds the behaviour every cache.Cache backend must have.
-// A backend runs it from its own tests:
-//
-//	cachetest.Run(t, func(t *testing.T) cache.Cache { ... }, advance)
 package cachetest
 
 import (
@@ -19,13 +15,8 @@ import (
 	cache "github.com/champ-isaac/cacheconnector"
 )
 
-// Advance moves the backend's clock forward by d. A backend with a fake clock
-// (miniredis, a fake memcached) passes its own; nil makes Run sleep.
 type Advance func(d time.Duration)
 
-// scoped puts a prefix on every key and remembers the keys it wrote, so a
-// subtest on a shared server neither reads another subtest's keys nor leaves
-// its own behind.
 type scoped struct {
 	cache.Cache
 	prefix string
@@ -48,8 +39,6 @@ func (s *scoped) Delete(ctx context.Context, key string) error {
 	return s.Cache.Delete(ctx, s.prefix+key)
 }
 
-// Run runs the contract against a fresh cache from newCache for each subtest.
-// Each subtest's keys carry the subtest's name and are deleted when it ends.
 func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance) {
 	t.Helper()
 	if advance == nil {
@@ -59,7 +48,7 @@ func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance)
 		t.Helper()
 		s := &scoped{Cache: newCache(t), prefix: t.Name() + ":", keys: map[string]struct{}{}}
 		t.Cleanup(func() { assert.NoError(t, s.Close()) })
-		// Cleanups run last in, first out: the keys go before the close.
+
 		t.Cleanup(func() {
 			for key := range s.keys {
 				assert.NoError(t, s.Cache.Delete(context.Background(), key))
@@ -105,13 +94,11 @@ func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance)
 		assert.Empty(t, got)
 	})
 
-	// 512 KiB is under Memcached's default 1 MiB item limit, and large enough to
-	// span many network reads, so a truncated or corrupted value shows up.
 	t.Run("LargeValueRoundTrip", func(t *testing.T) {
 		c := fresh(t)
 		big := make([]byte, 512<<10)
 		for i := range big {
-			big[i] = byte(i % 251) // not a repeating byte, so a shifted or cut value differs
+			big[i] = byte(i % 251)
 		}
 		require.NoError(t, c.Set(ctx, "big", big, 0))
 		got, err := c.Get(ctx, "big")
@@ -139,10 +126,7 @@ func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance)
 
 	t.Run("TTLExpires", func(t *testing.T) {
 		c := fresh(t)
-		// Memcached's clock ticks once a second, so an entry set with a
-		// ttl of N seconds lives between N-1 and N seconds. A 3-second ttl
-		// is therefore still there after 1 second on every backend, and gone
-		// after 3.5.
+
 		require.NoError(t, c.Set(ctx, "k", []byte("v"), 3*time.Second))
 		require.NoError(t, c.Set(ctx, "long", []byte("v"), time.Hour))
 		advance(time.Second)
@@ -155,8 +139,6 @@ func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance)
 		assert.NoError(t, err, "an entry with a long ttl is not expired by the wait")
 	})
 
-	// A ttl under one second must still expire. Memcached counts whole seconds,
-	// so it rounds 100ms up to 1s; passing it on as 0 would mean "never expires".
 	t.Run("SubSecondTTLStillExpires", func(t *testing.T) {
 		c := fresh(t)
 		require.NoError(t, c.Set(ctx, "short", []byte("v"), 100*time.Millisecond))
@@ -165,9 +147,6 @@ func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance)
 		assert.ErrorIs(t, err, cache.ErrNotFound, "a sub-second ttl expires; it does not become no ttl")
 	})
 
-	// The next two cases wait 2 seconds for a 1-second ttl. Memcached's clock
-	// ticks once a second, so a 1-second entry can live almost a second, and
-	// the extra second keeps the check from racing the tick.
 	t.Run("OverwriteWithoutTTLClearsOldTTL", func(t *testing.T) {
 		c := fresh(t)
 		require.NoError(t, c.Set(ctx, "k", []byte("v1"), time.Second))
@@ -212,9 +191,6 @@ func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance)
 		assert.Equal(t, []byte("new"), v)
 	})
 
-	// Memcached reads a ttl past 30 days as a Unix timestamp, not as seconds,
-	// so these lengths sit on both sides of that switch. A value encoded the
-	// wrong way would be in the past and the Get would miss.
 	t.Run("TTLAroundThirtyDays", func(t *testing.T) {
 		c := fresh(t)
 		day := 24 * time.Hour
@@ -233,9 +209,6 @@ func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance)
 		}
 	})
 
-	// "Forever" is often written as the largest Duration. A backend that does
-	// arithmetic on the ttl (rounding it up, adding the current time) can
-	// overflow on it, and then the entry would expire at once or never be found.
 	t.Run("VeryLongTTL", func(t *testing.T) {
 		c := fresh(t)
 		for _, tc := range []struct {
@@ -256,11 +229,11 @@ func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance)
 		c := fresh(t)
 		in := []byte("abc")
 		require.NoError(t, c.Set(ctx, "k", in, 0))
-		in[0] = 'X' // the caller reuses its buffer after Set
+		in[0] = 'X'
 		out, err := c.Get(ctx, "k")
 		require.NoError(t, err)
 		assert.Equal(t, []byte("abc"), out)
-		out[0] = 'Y' // and modifies what Get returned
+		out[0] = 'Y'
 		again, _ := c.Get(ctx, "k")
 		assert.Equal(t, []byte("abc"), again)
 	})
@@ -294,8 +267,6 @@ func Run(t *testing.T, newCache func(t *testing.T) cache.Cache, advance Advance)
 		assert.NotErrorIs(t, err, cache.ErrNotFound, "a canceled call is an error, not a miss")
 	})
 
-	// A canceled call must fail and must not reach the server: a canceled Set
-	// writes nothing, and a canceled Delete leaves the key where it was.
 	t.Run("CanceledSetDoesNotWrite", func(t *testing.T) {
 		c := fresh(t)
 		canceled, cancel := context.WithCancel(ctx)

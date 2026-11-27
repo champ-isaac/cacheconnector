@@ -12,22 +12,19 @@ import (
 	"time"
 )
 
-// fakeServer is just enough of the Memcached text protocol for gomemcache:
-// gets, set, delete and version, with a clock the test can move.
 type fakeServer struct {
 	ln net.Listener
 
 	mu    sync.Mutex
 	data  map[string]fakeItem
 	clock time.Time
-	// lastExptime is the exptime of the most recent set, so tests can check
-	// the ttl conversion on the wire.
+
 	lastExptime int64
 }
 
 type fakeItem struct {
 	value   []byte
-	expires time.Time // zero means never
+	expires time.Time
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
@@ -124,7 +121,6 @@ func (s *fakeServer) handle(conn net.Conn) {
 	}
 }
 
-// reply writes a response; a failed write only means the client went away.
 func reply(w io.Writer, format string, args ...any) {
 	_, _ = fmt.Fprintf(w, format, args...)
 }
