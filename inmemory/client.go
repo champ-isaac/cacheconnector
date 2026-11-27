@@ -23,8 +23,16 @@ type Client struct {
 
 type Option func(*Client)
 
+// WithCleanupInterval sets how often the background janitor removes expired
+// entries. A zero or negative d is ignored and the default of one minute stays,
+// because time.NewTicker panics on a non-positive interval. Expired entries are
+// never returned by Get whatever the interval is.
 func WithCleanupInterval(d time.Duration) Option {
-	return func(c *Client) { c.interval = d }
+	return func(c *Client) {
+		if d > 0 {
+			c.interval = d
+		}
+	}
 }
 
 func New(opts ...Option) *Client {
