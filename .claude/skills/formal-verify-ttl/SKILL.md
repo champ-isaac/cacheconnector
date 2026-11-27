@@ -1,7 +1,7 @@
 ---
 name: formal-verify-ttl
 description: Exhaustively checks the TTL promise of cacheconnector, that a value stored with a positive ttl lives exactly that long and a value stored with ttl 0 or less never expires. Covers memcached.expiration and the inmemory Client (Set, Get, Delete, sweep). Use after any change to memcached/client.go, inmemory/client.go, or how a ttl is passed to a backend, and before trusting a green unit test on expiry.
-sync-commit: ad12175
+sync-commit: a68e4549bc4cbaf9dc21965245ddd4d29be580d2
 ---
 
 # Formal check of the cacheconnector TTL promise
@@ -58,12 +58,12 @@ From the repo root:
 | `checks/memcached/expiration_test.go` | `memcached/client.go`: `expiration`, `maxRelativeTTL`, and the ttl argument of `Client.Set` |
 | `checks/inmemory/lifetime_test.go` | `inmemory/client.go`: `Client.Set`, `Get`, `Delete`, `sweep`, `entry.expired` |
 
-`inmemory/cache.go` passes the ttl straight to `Client.Set` and is covered by reading, not by a check. `redis/cache.go` clamps a negative ttl to 0 and hands the rest to go-redis, so it is not covered.
+`inmemory/cache.go` passes the ttl straight to `Client.Set` and is covered by reading, not by a check. `inmemory.WithCleanupInterval` and the janitor loop are in a covered file but are not part of this promise. They only set how often `sweep` runs, and the check calls `sweep` by hand. A non-positive interval is ignored since #19 (`cd83051`), and `TestNonPositiveCleanupIntervalKeepsDefault` in `inmemory/client_test.go` guards that. `redis/cache.go` clamps a negative ttl to 0 and hands the rest to go-redis, so it is not covered.
 
 **sync-commit** (the line in the frontmatter) is the commit at which the check was confirmed to describe the covered files. `verify.sh drift` lists covered files that changed after it. When it lists any, re-read the changed code against the table above, update the check or the mutants if needed, run `check` and `mutants`, and only then move `sync-commit` forward to the current commit. Never move it first.
 
 ## Known limits
 
 - **After 19 Jan 2038** the memcached ttl is a 32-bit number, so `expiration` returns `MaxInt32` for every ttl over 30 days, a time already in the past. Those entries would expire at once. The check assumes a clock before that date and does not test it. Nothing today is affected.
-- **Not covered:** the redis and valkey server side, memcached's own handling of the number, clock differences between this machine and the memcached server (an absolute timestamp for a ttl over 30 days shifts by the difference), concurrent callers (only one at a time is checked), and `Close` or janitor timing.
+- **Not covered:** the redis and valkey server side, memcached's own handling of the number, clock differences between this machine and the memcached server (an absolute timestamp for a ttl over 30 days shifts by the difference), concurrent callers (only one at a time is checked), and `Close`, janitor timing, and the cleanup interval option.
 - A pass is a pass inside the bounds above, not a proof for every input.
