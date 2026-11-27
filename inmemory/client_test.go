@@ -85,3 +85,18 @@ func TestClientCloseTwice(t *testing.T) {
 	assert.NoError(t, c.Close())
 	assert.NoError(t, c.Close())
 }
+
+func TestNonPositiveCleanupIntervalKeepsDefault(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second} {
+		c := New(WithCleanupInterval(d))
+		assert.Equal(t, time.Minute, c.interval)
+
+		c.Set("k", "v", time.Minute)
+		v, ok := c.Get("k")
+		assert.True(t, ok)
+		assert.Equal(t, "v", v)
+
+		time.Sleep(50 * time.Millisecond)
+		assert.NoError(t, c.Close())
+	}
+}
