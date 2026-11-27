@@ -15,4 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `(*redis.Client).HGetAllNScan` → `(*redis.Client).HGetAllScan`. Replace the method name at each call site.
   - `cache.Config.Resolved` → `cache.Config.DriverName`. Replace the method name, including on an embedded config such as `cfg.Cache.DriverName()`.
 
+### Fixed
+
+- `inmemory.WithCleanupInterval(0)` no longer crashes the process. A zero or negative interval made the background janitor call `time.NewTicker` with a non-positive duration, which panics on a goroutine the caller cannot recover from. The option now ignores a non-positive value and the default of one minute stays. Fixed in [#19](https://github.com/champ-isaac/cacheconnector/pull/19). No change is needed in calling code.
+
 [Unreleased]: https://github.com/champ-isaac/cacheconnector/commits/develop
