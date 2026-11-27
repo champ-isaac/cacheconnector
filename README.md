@@ -8,7 +8,7 @@ Module path: `github.com/champ-isaac/cacheconnector`. Needs Go 1.26.
 
 | Package | What it does |
 |---|---|
-| `cache` (root) | The `Cache` interface (`Get`, `Set`, `Delete`, `Ping`, `Close`), `ErrNotFound`, and the registry: `FromFile(ctx, path)`, `ReadConfig(path)`, `FromConfig(ctx, Config)`, `Config.Resolved()`, `Open(ctx, dsn)`, `FromEnv(ctx)`, `Register`, `Backends` |
+| `cache` (root) | The `Cache` interface (`Get`, `Set`, `Delete`, `Ping`, `Close`), `ErrNotFound`, and the registry: `FromFile(ctx, path)`, `ReadConfig(path)`, `FromConfig(ctx, Config)`, `Config.DriverName()`, `Open(ctx, dsn)`, `FromEnv(ctx)`, `Register`, `Backends` |
 | `inmemory` | Process-local map with TTL, swept in the background. Scheme `inmemory` |
 | `redis` | Scheme `redis` / `rediss` (TLS). Also `redis.Client` with options, `FromEnv` and `OptionsFromEnv` |
 | `valkey` | Scheme `valkey` / `valkeys` (TLS). Valkey speaks the Redis protocol, so it reuses the Redis client |
@@ -66,16 +66,16 @@ To use another driver, change `driver:` and restart the process. Nothing is reco
 - If your program already has its own config struct, embed `cache.Config` (it has the same `driver` and `url` yaml keys) and call `cache.FromConfig(ctx, cfg.Cache)`. The file is then read by your loader, not by this module. `FromConfig` checks that `driver` and `url` agree, as above. Only `FromFile` rejects a config that sets neither; `FromConfig` with both empty opens `inmemory`.
 - The driver is chosen once, when the program starts. Changing the file while the process runs has no effect.
 - The tradeoff: the binary contains every client library (go-redis, gomemcache), so it is bigger than one that imports a single backend.
-- **Which driver is running.** `Cache` has no name method, and `%T` cannot tell `redis` from `valkey` (both print `redis.adapter`). Read the resolved driver from the config instead. `Config.Resolved()` returns the backend name that `FromConfig` opens: the `url` scheme if `url` is set, else `driver`, else `inmemory`, in lower case. `FromFile` is `ReadConfig` followed by `FromConfig`, so to log the driver, call those two yourself:
+- **Which driver is running.** `Cache` has no name method, and `%T` cannot tell `redis` from `valkey` (both print `redis.adapter`). Read the resolved driver from the config instead. `Config.DriverName()` returns the backend name that `FromConfig` opens: the `url` scheme if `url` is set, else `driver`, else `inmemory`, in lower case. `FromFile` is `ReadConfig` followed by `FromConfig`, so to log the driver, call those two yourself:
 
   ```go
   cfg, err := cache.ReadConfig("cache.yaml")   // reads and checks the file, opens nothing
   if err != nil { ... }
-  log.Printf("cache driver: %s", cfg.Resolved())
+  log.Printf("cache driver: %s", cfg.DriverName())
   c, err := cache.FromConfig(ctx, cfg)         // same as cache.FromFile(ctx, "cache.yaml")
   ```
 
-  With an embedded `cache.Config`, call `cfg.Cache.Resolved()` the same way. This is better than logging `cfg.Driver`, which is empty when the default applies and is overridden by `url`. `Resolved` does not check that the backend is registered or that `url` and `driver` agree; `FromConfig` does that. It returns `""` when the value is not a plain name or `url` does not parse, so a DSN never ends up in a log line. The `Cache` interface is unchanged, and the value returned by `FromFile` and `FromConfig` is the backend's own type, not a wrapper.
+  With an embedded `cache.Config`, call `cfg.Cache.DriverName()` the same way. This is better than logging `cfg.Driver`, which is empty when the default applies and is overridden by `url`. `DriverName` does not check that the backend is registered or that `url` and `driver` agree; `FromConfig` does that. It returns `""` when the value is not a plain name or `url` does not parse, so a DSN never ends up in a log line. The `Cache` interface is unchanged, and the value returned by `FromFile` and `FromConfig` is the backend's own type, not a wrapper.
 - `FromEnv` does not use the agreement check: `CACHE_URL` still wins over `CACHE_BACKEND` (see Environment).
 
 ### Before you switch drivers
@@ -122,7 +122,7 @@ An error from `Open` never contains the DSN, because it can hold a password.
 | `REDIS_ADDR`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_DB` | Redis settings (`VALKEY_*` for Valkey) | `127.0.0.1:6379`, empty, empty, `0` |
 | `MEMCACHED_ADDRS` | comma separated `host:port` list | `127.0.0.1:11211` |
 
-Values are trimmed. A bad `REDIS_DB` is reported by name, and an empty password means no authentication. Pool size, timeouts and TLS are not read from the environment: use a DSN, or the options `redis.WithPoolSize`, `WithReadTimeout`, `WithWriteTimeout`, `WithEnableTls`, `WithCACertPath` and `WithServerName`.
+Values are trimmed. A bad `REDIS_DB` is reported by name, and an empty password means no authentication. Pool size, timeouts and TLS are not read from the environment: use a DSN, or the options `redis.WithPoolSize`, `WithReadTimeout`, `WithWriteTimeout`, `WithEnableTLS`, `WithCACertPath` and `WithServerName`.
 
 ### Backend differences
 

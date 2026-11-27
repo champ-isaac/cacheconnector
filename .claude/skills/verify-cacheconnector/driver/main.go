@@ -86,7 +86,7 @@ func doctor(ctx context.Context, dir, run string) {
 			check(false, "open from config file", err.Error())
 			continue
 		}
-		check(cfg.Resolved() == t.name, "Config.Resolved()", cfg.Resolved())
+		check(cfg.DriverName() == t.name, "Config.DriverName()", cfg.DriverName())
 		pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		err = c.Ping(pctx)
 		cancel()
@@ -158,7 +158,7 @@ func drive(ctx context.Context, t target, dir, run string) {
 		return c.Set(ctx, p+k, v, ttl)
 	}
 
-	check(cfg.Resolved() == t.name, "Config.Resolved() names the driver", cfg.Resolved())
+	check(cfg.DriverName() == t.name, "Config.DriverName() names the driver", cfg.DriverName())
 	perr := c.Ping(ctx)
 	check(perr == nil, "Ping", fmt.Sprint(perr))
 

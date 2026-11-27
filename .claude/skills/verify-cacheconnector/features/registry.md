@@ -5,7 +5,7 @@ A program picks its backend by name at start-up, from a config file, a DSN or th
 ## Sub-features
 
 - `reg-list` `cache.Backends()` lists the registered schemes, sorted.
-- `reg-file` `cache.FromFile` opens the backend a YAML file names; `Config.Resolved()` returns its name.
+- `reg-file` `cache.FromFile` opens the backend a YAML file names; `Config.DriverName()` returns its name.
 - `reg-unknown` An unknown scheme is an error that lists the registered backends.
 - `reg-mismatch` A `driver` and a `url` whose schemes disagree is an error.
 - `reg-default` An empty `Config` opens `inmemory`.

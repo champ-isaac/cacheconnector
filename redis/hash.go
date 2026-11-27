@@ -14,10 +14,10 @@ func (c *Client) HDel(ctx context.Context, key string, fields ...string) (int64,
 	return c.raw.HDel(ctx, key, fields...).Result()
 }
 
-func (c *Client) HGetAllNScan(ctx context.Context, key string, dest any) error {
+func (c *Client) HGetAllScan(ctx context.Context, key string, dest any) error {
 	return c.raw.HGetAll(ctx, key).Scan(dest)
 }
 
-func (c *Client) SMember(ctx context.Context, key string) (any, error) {
+func (c *Client) SMembers(ctx context.Context, key string) (any, error) {
 	return c.raw.SMembers(ctx, key).Result()
 }

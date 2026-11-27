@@ -21,6 +21,6 @@ func (c *Client) Scan(ctx context.Context, cursor uint64, match string, count in
 	return c.raw.Scan(ctx, cursor, match, count).Result()
 }
 
-func (c *Client) FlushDb(ctx context.Context) error {
+func (c *Client) FlushDB(ctx context.Context) error {
 	return c.raw.FlushDB(ctx).Err()
 }
