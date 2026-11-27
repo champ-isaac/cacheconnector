@@ -23,11 +23,11 @@ import (
 	"github.com/champ-isaac/cacheconnector/memcached"
 )
 
-func TestCache_Contract(t *testing.T) {
+func TestCacheContract(t *testing.T) {
 	cachetest.Run(t, func(t *testing.T) cache.Cache { return newCache(t) }, nil)
 }
 
-func TestFromEnv_UsesMemcachedAddrs(t *testing.T) {
+func TestFromEnvUsesMemcachedAddrs(t *testing.T) {
 	t.Setenv("MEMCACHED_ADDRS", MemcachedHost)
 	t.Setenv(cache.EnvBackend, "memcached")
 	t.Setenv(cache.EnvURL, "")
@@ -336,7 +336,7 @@ func TestTTLBeyond2038IsClamped(t *testing.T) {
 	assert.EqualValues(t, math.MaxInt32, metadumpValue(t, key, "exp"), "the expiry is clamped to 2147483647")
 }
 
-func TestOpen_TimeoutOptionIsApplied(t *testing.T) {
+func TestOpenTimeoutOptionIsApplied(t *testing.T) {
 	c, err := cache.Open(ctx, "memcached://"+hungAddr(t)+"?timeout=300ms")
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -349,7 +349,7 @@ func TestOpen_TimeoutOptionIsApplied(t *testing.T) {
 	assert.Less(t, elapsed, time.Second, "and no longer than that")
 }
 
-func TestOpen_ServerOptionWithOneServerDown(t *testing.T) {
+func TestOpenServerOptionWithOneServerDown(t *testing.T) {
 	c, err := cache.Open(ctx, "memcached://"+MemcachedHost+"?server="+closedAddr(t)+"&timeout=500ms")
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, c.Close()) }()

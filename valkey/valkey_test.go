@@ -12,7 +12,7 @@ import (
 	"github.com/champ-isaac/cacheconnector/cachetest"
 )
 
-func TestCache_Contract(t *testing.T) {
+func TestCacheContract(t *testing.T) {
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	cachetest.Run(t, func(t *testing.T) cache.Cache {
@@ -27,7 +27,7 @@ func TestRegistered(t *testing.T) {
 	assert.Subset(t, cache.Backends(), []string{"valkey", "valkeys"})
 }
 
-func TestFromEnv_UsesValkeyVariables(t *testing.T) {
+func TestFromEnvUsesValkeyVariables(t *testing.T) {
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	t.Setenv("VALKEY_ADDR", mr.Addr())

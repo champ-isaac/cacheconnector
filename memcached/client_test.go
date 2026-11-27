@@ -16,7 +16,7 @@ import (
 
 var ctx = context.Background()
 
-func TestCache_Contract(t *testing.T) {
+func TestCacheContract(t *testing.T) {
 	srv := newFakeServer(t)
 	cachetest.Run(t, func(t *testing.T) cache.Cache {
 		srv.mu.Lock()
@@ -49,7 +49,7 @@ func TestExpiration(t *testing.T) {
 	}
 }
 
-func TestSet_TTLOnTheWire(t *testing.T) {
+func TestSetTTLOnTheWire(t *testing.T) {
 	srv := newFakeServer(t)
 	c := New([]string{srv.Addr()}, WithTimeout(2*time.Second))
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -64,12 +64,12 @@ func TestSet_TTLOnTheWire(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestNew_DefaultAddr(t *testing.T) {
+func TestNewDefaultAddr(t *testing.T) {
 	c := New(nil)
 	assert.NoError(t, c.Close())
 }
 
-func TestFactory_DSN(t *testing.T) {
+func TestFactoryDSN(t *testing.T) {
 	a, b := newFakeServer(t), newFakeServer(t)
 	c, err := cache.Open(ctx, "memcached://"+a.Addr()+"?server="+b.Addr()+"&timeout=2s&max_idle_conns=4")
 	require.NoError(t, err)
@@ -87,7 +87,7 @@ func TestFactory_DSN(t *testing.T) {
 	}
 }
 
-func TestFactory_FromEnv(t *testing.T) {
+func TestFactoryFromEnv(t *testing.T) {
 	srv := newFakeServer(t)
 	t.Setenv("MEMCACHED_ADDRS", " "+srv.Addr()+" , ,")
 	t.Setenv(cache.EnvBackend, "memcached")

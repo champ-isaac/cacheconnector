@@ -25,9 +25,9 @@ type Client struct {
 	minIdleConns int
 	readTimeout  time.Duration
 	writeTimeout time.Duration
-	enableTls    bool
+	enableTLS    bool
 	caCertPath   string
-	servername   string
+	serverName   string
 }
 
 type Option func(*Client)
@@ -79,7 +79,7 @@ func WithWriteTimeout(timeout time.Duration) Option {
 }
 func WithEnableTls(enable bool) Option {
 	return func(c *Client) {
-		c.enableTls = enable
+		c.enableTLS = enable
 	}
 }
 func WithCACertPath(caCertPath string) Option {
@@ -87,9 +87,9 @@ func WithCACertPath(caCertPath string) Option {
 		c.caCertPath = caCertPath
 	}
 }
-func WithServerName(servername string) Option {
+func WithServerName(serverName string) Option {
 	return func(c *Client) {
-		c.servername = servername
+		c.serverName = serverName
 	}
 }
 
@@ -102,7 +102,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		minIdleConns: 3,
 		readTimeout:  2 * time.Second,
 		writeTimeout: 2 * time.Second,
-		enableTls:    false,
+		enableTLS:    false,
 	}
 
 	for _, opt := range opts {
@@ -126,11 +126,11 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	if client.password != "" {
 		rsOpts.Password = client.password
 	}
-	if client.enableTls {
-		if client.caCertPath == "" || client.servername == "" {
-			return nil, fmt.Errorf("enableTls requires caCertPath %s and servername %s", client.caCertPath, client.servername)
+	if client.enableTLS {
+		if client.caCertPath == "" || client.serverName == "" {
+			return nil, fmt.Errorf("enableTls requires caCertPath %s and servername %s", client.caCertPath, client.serverName)
 		}
-		tlsCfg, err := buildTLSConfig(client.caCertPath, client.servername)
+		tlsCfg, err := buildTLSConfig(client.caCertPath, client.serverName)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +146,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	return client, nil
 }
 
-func buildTLSConfig(caCertPath string, servername string) (*tls.Config, error) {
+func buildTLSConfig(caCertPath string, serverName string) (*tls.Config, error) {
 	caCert, err := os.ReadFile(filepath.Clean(caCertPath)) // #nosec G304 -- trusted config path
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA certificate: %w", err)
@@ -158,7 +158,7 @@ func buildTLSConfig(caCertPath string, servername string) (*tls.Config, error) {
 	return &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		RootCAs:    caPool,
-		ServerName: servername,
+		ServerName: serverName,
 	}, nil
 }
 

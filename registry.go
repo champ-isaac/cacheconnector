@@ -28,19 +28,19 @@ const (
 type Factory func(ctx context.Context, u *url.URL) (Cache, error)
 
 var (
-	mu        sync.RWMutex
-	factories = map[string]Factory{}
+	registryMu sync.RWMutex
+	factories  = map[string]Factory{}
 )
 
 type Option func(*registration)
 
 type registration struct {
-	tls    string
-	hasTLS bool
+	tlsScheme string
+	hasTLS    bool
 }
 
 func WithTLS(scheme string) Option {
-	return func(r *registration) { r.tls, r.hasTLS = strings.ToLower(scheme), true }
+	return func(r *registration) { r.tlsScheme, r.hasTLS = strings.ToLower(scheme), true }
 }
 
 func Register(scheme string, f Factory, opts ...Option) {
@@ -52,23 +52,23 @@ func Register(scheme string, f Factory, opts ...Option) {
 	for _, o := range opts {
 		o(&r)
 	}
-	if r.hasTLS && (r.tls == "" || r.tls == scheme) {
+	if r.hasTLS && (r.tlsScheme == "" || r.tlsScheme == scheme) {
 		panic("cache: WithTLS needs a scheme different from " + scheme)
 	}
-	mu.Lock()
-	defer mu.Unlock()
+	registryMu.Lock()
+	defer registryMu.Unlock()
 	if _, dup := factories[scheme]; dup {
 		panic("cache: Register called twice for scheme " + scheme)
 	}
 	factories[scheme] = f
 	if r.hasTLS {
-		tlsVariant[scheme] = r.tls
+		tlsVariant[scheme] = r.tlsScheme
 	}
 }
 
 func Backends() []string {
-	mu.RLock()
-	defer mu.RUnlock()
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	names := make([]string, 0, len(factories))
 	for name := range factories {
 		names = append(names, name)
@@ -82,7 +82,7 @@ func Open(ctx context.Context, dsn string) (Cache, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cache: invalid DSN: %w", redactURLError(err))
 	}
-	return open(ctx, u)
+	return openURL(ctx, u)
 }
 
 type Config struct {
@@ -110,11 +110,11 @@ func (c Config) Resolved() string {
 func FromConfig(ctx context.Context, c Config) (Cache, error) {
 	if dsn, name := strings.TrimSpace(c.URL), strings.ToLower(strings.TrimSpace(c.Driver)); dsn != "" && name != "" {
 		if u, err := url.Parse(dsn); err == nil {
-			mu.RLock()
-			tls := tlsVariant[name]
-			mu.RUnlock()
-			if scheme := strings.ToLower(u.Scheme); scheme != name && scheme != tls {
-				return nil, fmt.Errorf("cache: driver %s does not match the url scheme %s", shown(name), shownScheme(u))
+			registryMu.RLock()
+			tlsScheme := tlsVariant[name]
+			registryMu.RUnlock()
+			if scheme := strings.ToLower(u.Scheme); scheme != name && scheme != tlsScheme {
+				return nil, fmt.Errorf("cache: driver %s does not match the url scheme %s", safeName(name), safeScheme(u))
 			}
 		}
 	}
@@ -131,7 +131,7 @@ func openConfig(ctx context.Context, c Config) (Cache, error) {
 	if name == "" {
 		name = defaultBackend
 	}
-	return open(ctx, &url.URL{Scheme: name})
+	return openURL(ctx, &url.URL{Scheme: name})
 }
 
 func FromFile(ctx context.Context, path string) (Cache, error) {
@@ -150,7 +150,7 @@ func ReadConfig(path string) (Config, error) {
 	var c Config
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
-	for i := leadingEmpty(b); i > 0; i-- {
+	for i := countLeadingEmptyDocs(b); i > 0; i-- {
 		var skip yaml.Node
 		_ = dec.Decode(&skip)
 	}
@@ -184,19 +184,19 @@ func FromEnv(ctx context.Context) (Cache, error) {
 	return openConfig(ctx, Config{Driver: os.Getenv(EnvBackend), URL: os.Getenv(EnvURL)})
 }
 
-func open(ctx context.Context, u *url.URL) (Cache, error) {
+func openURL(ctx context.Context, u *url.URL) (Cache, error) {
 	scheme := strings.ToLower(u.Scheme)
-	mu.RLock()
+	registryMu.RLock()
 	f, ok := factories[scheme]
-	mu.RUnlock()
+	registryMu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("cache: unknown backend %s (registered: %s); did you import its package?",
-			shownScheme(u), strings.Join(Backends(), ", "))
+			safeScheme(u), strings.Join(Backends(), ", "))
 	}
 	return f(ctx, u)
 }
 
-func leadingEmpty(b []byte) int {
+func countLeadingEmptyDocs(b []byte) int {
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	n := 0
 	for {
@@ -224,7 +224,7 @@ func emptyDocument(n *yaml.Node) bool {
 	return v.Kind == yaml.ScalarNode && v.Tag == "!!null" && v.Value == ""
 }
 
-func shown(name string) string {
+func safeName(name string) string {
 	if !plainName(name) {
 		return notAName
 	}
@@ -233,11 +233,11 @@ func shown(name string) string {
 
 const notAName = "(not a valid name)"
 
-func shownScheme(u *url.URL) string {
+func safeScheme(u *url.URL) string {
 	if u.Opaque != "" {
 		return notAName
 	}
-	return shown(strings.ToLower(u.Scheme))
+	return safeName(strings.ToLower(u.Scheme))
 }
 
 func plainName(name string) bool {

@@ -67,7 +67,7 @@ func tlsServer(t *testing.T) (addr, caPath string) {
 	return mr.Addr(), caPath
 }
 
-func TestNew_DefaultsAndOptions(t *testing.T) {
+func TestNewDefaultsAndOptions(t *testing.T) {
 	mr := miniredis.RunT(t)
 	mr.RequireUserAuth("user", "secret")
 
@@ -84,7 +84,7 @@ func TestNew_DefaultsAndOptions(t *testing.T) {
 	assert.Equal(t, 5, c.poolSize)
 }
 
-func TestNew_Errors(t *testing.T) {
+func TestNewErrors(t *testing.T) {
 	t.Run("server unreachable", func(t *testing.T) {
 		_, err := New(ctx, WithAddr("127.0.0.1:1"))
 		assert.Error(t, err)
@@ -111,7 +111,7 @@ func TestNew_Errors(t *testing.T) {
 	})
 }
 
-func TestNew_TLS(t *testing.T) {
+func TestNewTLS(t *testing.T) {
 	addr, caPath := tlsServer(t)
 	c, err := New(ctx, WithAddr(addr), WithEnableTls(true), WithCACertPath(caPath), WithServerName("redis.test"))
 	require.NoError(t, err)
@@ -122,11 +122,11 @@ func TestNew_TLS(t *testing.T) {
 	assert.Error(t, err, "server name must match the certificate")
 }
 
-func TestClient_CloseWithoutConnection(t *testing.T) {
+func TestClientCloseWithoutConnection(t *testing.T) {
 	assert.NoError(t, (&Client{}).Close())
 }
 
-func TestClient_KV(t *testing.T) {
+func TestClientKV(t *testing.T) {
 	c, mr := newClient(t)
 
 	require.NoError(t, c.Set(ctx, "a", "1", 0))
@@ -154,7 +154,7 @@ type item struct {
 	Active bool   `redis:"active"`
 }
 
-func TestClient_Hash(t *testing.T) {
+func TestClientHash(t *testing.T) {
 	c, _ := newClient(t)
 
 	n, err := c.HSet(ctx, "h", item{Raw: "x", Active: true})
@@ -174,7 +174,7 @@ func TestClient_Hash(t *testing.T) {
 	assert.Equal(t, int64(1), deleted)
 }
 
-func TestClient_Set(t *testing.T) {
+func TestClientSet(t *testing.T) {
 	c, mr := newClient(t)
 	_, err := mr.SAdd("s", "m1", "m2")
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestClient_Set(t *testing.T) {
 	assert.ElementsMatch(t, []string{"m1", "m2"}, members)
 }
 
-func TestClient_Pipeline(t *testing.T) {
+func TestClientPipeline(t *testing.T) {
 	c, mr := newClient(t)
 
 	_, err := c.PipeSet(ctx, "ps", "v", 0)

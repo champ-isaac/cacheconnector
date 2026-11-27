@@ -24,21 +24,21 @@ func (stub) Delete(context.Context, string) error                     { return n
 func (stub) Ping(context.Context) error                               { return nil }
 func (stub) Close() error                                             { return nil }
 
-func reset(t *testing.T) {
+func resetRegistry(t *testing.T) {
 	t.Helper()
-	mu.Lock()
+	registryMu.Lock()
 	saved := factories
 	factories = map[string]Factory{}
-	mu.Unlock()
+	registryMu.Unlock()
 	savedTLS := tlsVariant
 	tlsVariant = map[string]string{}
-	t.Cleanup(func() { mu.Lock(); factories = saved; tlsVariant = savedTLS; mu.Unlock() })
+	t.Cleanup(func() { registryMu.Lock(); factories = saved; tlsVariant = savedTLS; registryMu.Unlock() })
 }
 
 func stubFactory(_ context.Context, u *url.URL) (Cache, error) { return stub{u}, nil }
 
 func TestRegister(t *testing.T) {
-	reset(t)
+	resetRegistry(t)
 	Register("Fake", stubFactory)
 	assert.Equal(t, []string{"fake"}, Backends())
 	assert.Panics(t, func() { Register("fake", stubFactory) }, "duplicate")
@@ -47,7 +47,7 @@ func TestRegister(t *testing.T) {
 }
 
 func TestOpen(t *testing.T) {
-	reset(t)
+	resetRegistry(t)
 	Register("fake", stubFactory)
 	Register("alpha", stubFactory)
 
@@ -63,15 +63,15 @@ func TestOpen(t *testing.T) {
 	assert.Contains(t, err.Error(), "alpha, fake")
 }
 
-func TestOpen_BadDSNDoesNotLeakPassword(t *testing.T) {
+func TestOpenBadDSNDoesNotLeakPassword(t *testing.T) {
 	_, err := Open(ctx, "redis://:s3cret@host:notaport")
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "s3cret")
 	assert.NotContains(t, redactURLError(errors.New("plain")).Error(), "s3cret")
 }
 
-func TestOpen_FactoryError(t *testing.T) {
-	reset(t)
+func TestOpenFactoryError(t *testing.T) {
+	resetRegistry(t)
 	boom := errors.New("boom")
 	Register("bad", func(context.Context, *url.URL) (Cache, error) { return nil, boom })
 	_, err := Open(ctx, "bad:")
@@ -79,7 +79,7 @@ func TestOpen_FactoryError(t *testing.T) {
 }
 
 func TestFromEnv(t *testing.T) {
-	reset(t)
+	resetRegistry(t)
 	Register("inmemory", stubFactory)
 	Register("fake", stubFactory)
 
@@ -122,7 +122,7 @@ func writeConfig(t *testing.T, body string) string {
 }
 
 func TestFromFile(t *testing.T) {
-	reset(t)
+	resetRegistry(t)
 	Register("inmemory", stubFactory)
 	Register("fake", stubFactory)
 
@@ -155,8 +155,8 @@ func TestFromFile(t *testing.T) {
 	})
 }
 
-func TestFromFile_DriverHoldingDSNDoesNotLeak(t *testing.T) {
-	reset(t)
+func TestFromFileDriverHoldingDSNDoesNotLeak(t *testing.T) {
+	resetRegistry(t)
 	Register("fake", stubFactory)
 	_, err := FromFile(ctx, writeConfig(t, "driver: redis://:s3cret@h:1\n"))
 	require.Error(t, err)
@@ -164,8 +164,8 @@ func TestFromFile_DriverHoldingDSNDoesNotLeak(t *testing.T) {
 	assert.NotContains(t, err.Error(), "redis://")
 }
 
-func TestFromFile_URLAndDriverDisagree(t *testing.T) {
-	reset(t)
+func TestFromFileURLAndDriverDisagree(t *testing.T) {
+	resetRegistry(t)
 	Register("fake", stubFactory)
 	Register("other", stubFactory)
 
@@ -174,8 +174,8 @@ func TestFromFile_URLAndDriverDisagree(t *testing.T) {
 	assert.NotContains(t, err.Error(), "s3cret")
 }
 
-func TestFromFile_NeitherDriverNorURL(t *testing.T) {
-	reset(t)
+func TestFromFileNeitherDriverNorURL(t *testing.T) {
+	resetRegistry(t)
 	Register("inmemory", stubFactory)
 	for name, body := range map[string]string{
 		"empty file":    "",
@@ -187,8 +187,8 @@ func TestFromFile_NeitherDriverNorURL(t *testing.T) {
 	}
 }
 
-func TestFromFile_SecondDocumentRejected(t *testing.T) {
-	reset(t)
+func TestFromFileSecondDocumentRejected(t *testing.T) {
+	resetRegistry(t)
 	Register("fake", stubFactory)
 	Register("other", stubFactory)
 	_, err := FromFile(ctx, writeConfig(t, "driver: fake\n---\ndriver: other\n"))
@@ -196,7 +196,7 @@ func TestFromFile_SecondDocumentRejected(t *testing.T) {
 }
 
 func TestResolved(t *testing.T) {
-	reset(t)
+	resetRegistry(t)
 	Register("inmemory", stubFactory)
 	Register("fake", stubFactory)
 	Register("fakes", stubFactory)
@@ -241,8 +241,8 @@ func TestResolved(t *testing.T) {
 	})
 }
 
-func TestFromFile_TLSVariantOnlyForDeclaredPairs(t *testing.T) {
-	reset(t)
+func TestFromFileTLSVariantOnlyForDeclaredPairs(t *testing.T) {
+	resetRegistry(t)
 	Register("redis", stubFactory, WithTLS("rediss"))
 	Register("valkey", stubFactory, WithTLS("valkeys"))
 	for _, name := range []string{"rediss", "valkeys", "fake", "fakes"} {
@@ -264,8 +264,8 @@ func TestFromFile_TLSVariantOnlyForDeclaredPairs(t *testing.T) {
 	}
 }
 
-func TestFromFile_YAMLErrorsDoNotEchoFileText(t *testing.T) {
-	reset(t)
+func TestFromFileYAMLErrorsDoNotEchoFileText(t *testing.T) {
+	resetRegistry(t)
 	Register("inmemory", stubFactory)
 	for body, stage := range map[string]string{
 		"url: !!int s3cret\n":       "YAML syntax error",
@@ -282,8 +282,8 @@ func TestFromFile_YAMLErrorsDoNotEchoFileText(t *testing.T) {
 	}
 }
 
-func TestFromFile_TrailingAndBrokenDocuments(t *testing.T) {
-	reset(t)
+func TestFromFileTrailingAndBrokenDocuments(t *testing.T) {
+	resetRegistry(t)
 	Register("fake", stubFactory)
 
 	for _, body := range []string{"driver: fake\n---\n", "driver: fake\n---\n# note\n", "driver: fake\n---\n---\n"} {
@@ -298,7 +298,7 @@ func TestFromFile_TrailingAndBrokenDocuments(t *testing.T) {
 }
 
 func TestSchemeLessDSNDoesNotLeak(t *testing.T) {
-	reset(t)
+	resetRegistry(t)
 	Register("redis", stubFactory)
 	const dsn = "admin:hunter2@host:6379"
 	leaks := func(t *testing.T, s string) {
@@ -347,8 +347,8 @@ func TestEmptyDocument(t *testing.T) {
 	assert.False(t, emptyDocument(&yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{null, null}}), "document with two children")
 }
 
-func TestFromFile_ContentErrorDescribesEveryCause(t *testing.T) {
-	reset(t)
+func TestFromFileContentErrorDescribesEveryCause(t *testing.T) {
+	resetRegistry(t)
 	Register("inmemory", stubFactory)
 	for name, body := range map[string]string{
 		"duplicate key":   "driver: inmemory\ndriver: redis\n",
@@ -368,8 +368,8 @@ func TestFromFile_ContentErrorDescribesEveryCause(t *testing.T) {
 	assert.ErrorContains(t, err, "YAML syntax error", "other errors are unchanged")
 }
 
-func TestFromFile_LeadingEmptyDocumentsSkipped(t *testing.T) {
-	reset(t)
+func TestFromFileLeadingEmptyDocumentsSkipped(t *testing.T) {
+	resetRegistry(t)
 	Register("fake", stubFactory)
 
 	for _, body := range []string{
@@ -390,7 +390,7 @@ func TestFromFile_LeadingEmptyDocumentsSkipped(t *testing.T) {
 }
 
 func TestConfigEntryPointDefaults(t *testing.T) {
-	reset(t)
+	resetRegistry(t)
 	Register("inmemory", stubFactory)
 
 	_, err := FromFile(ctx, writeConfig(t, "# nothing\n"))
@@ -406,10 +406,10 @@ func TestConfigEntryPointDefaults(t *testing.T) {
 }
 
 func TestRegisterWithTLS(t *testing.T) {
-	reset(t)
-	mu.RLock()
+	resetRegistry(t)
+	registryMu.RLock()
 	assert.Empty(t, tlsVariant, "no built-in pairs")
-	mu.RUnlock()
+	registryMu.RUnlock()
 	Register("mystore", stubFactory, WithTLS("MyStoreS"))
 	Register("mystores", stubFactory)
 	Register("plain", stubFactory)
@@ -435,9 +435,9 @@ func TestRegisterWithTLS(t *testing.T) {
 	assert.Panics(t, func() { Register("a", stubFactory, WithTLS("")) }, "empty TLS scheme")
 	assert.Panics(t, func() { Register("b", stubFactory, WithTLS("B")) }, "TLS scheme equal to the scheme")
 	assert.Panics(t, func() { Register("mystore", stubFactory, WithTLS("x")) }, "duplicate")
-	mu.RLock()
+	registryMu.RLock()
 	assert.Equal(t, "mystores", tlsVariant["mystore"], "a failed Register leaves the pairing as it was")
 	assert.NotContains(t, tlsVariant, "a")
 	assert.NotContains(t, tlsVariant, "b")
-	mu.RUnlock()
+	registryMu.RUnlock()
 }

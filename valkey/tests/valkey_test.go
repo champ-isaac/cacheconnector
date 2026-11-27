@@ -21,11 +21,11 @@ import (
 	"github.com/champ-isaac/cacheconnector/cachetest"
 )
 
-func TestCache_Contract(t *testing.T) {
+func TestCacheContract(t *testing.T) {
 	cachetest.Run(t, newCache, nil)
 }
 
-func TestFromEnv_UsesValkeyVariables(t *testing.T) {
+func TestFromEnvUsesValkeyVariables(t *testing.T) {
 	t.Setenv("VALKEY_ADDR", ValkeyHost)
 	t.Setenv("VALKEY_PASSWORD", ValkeyPassword)
 	t.Setenv("VALKEY_DB", strconv.Itoa(ValkeyDB))
@@ -45,7 +45,7 @@ func TestFromEnv_UsesValkeyVariables(t *testing.T) {
 	assert.Equal(t, []byte("v"), v)
 }
 
-func TestOpen_WrongPasswordFails(t *testing.T) {
+func TestOpenWrongPasswordFails(t *testing.T) {
 	const wrong = "not-the-password"
 	_, err := cache.Open(ctx, "valkey://:"+wrong+"@"+ValkeyHost+"/"+strconv.Itoa(ValkeyDB))
 	require.Error(t, err)
@@ -68,13 +68,13 @@ func TestSetIsSharedAcrossConnections(t *testing.T) {
 	assert.ErrorIs(t, err, cache.ErrNotFound)
 }
 
-func TestOpen_NoPasswordFails(t *testing.T) {
+func TestOpenNoPasswordFails(t *testing.T) {
 	_, err := cache.Open(ctx, "valkey://"+ValkeyHost+"/"+strconv.Itoa(ValkeyDB))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NOAUTH")
 }
 
-func TestOpen_DatabaseOutOfRangeFails(t *testing.T) {
+func TestOpenDatabaseOutOfRangeFails(t *testing.T) {
 	_, err := cache.Open(ctx, "valkey://:"+ValkeyPassword+"@"+ValkeyHost+"/999")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "DB index is out of range")
@@ -105,7 +105,7 @@ func TestArbitraryKeysRoundTrip(t *testing.T) {
 	assert.Equal(t, []byte("canary"), v)
 }
 
-func TestOpen_UsernameInDSN(t *testing.T) {
+func TestOpenUsernameInDSN(t *testing.T) {
 	c, err := cache.Open(ctx, "valkey://default:"+ValkeyPassword+"@"+ValkeyHost+"/"+strconv.Itoa(ValkeyDB))
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -116,7 +116,7 @@ func TestOpen_UsernameInDSN(t *testing.T) {
 	assert.Contains(t, err.Error(), "WRONGPASS")
 }
 
-func TestFromEnv_UsesValkeyUsername(t *testing.T) {
+func TestFromEnvUsesValkeyUsername(t *testing.T) {
 	t.Setenv("VALKEY_ADDR", ValkeyHost)
 	t.Setenv("VALKEY_PASSWORD", ValkeyPassword)
 	t.Setenv("VALKEY_DB", strconv.Itoa(ValkeyDB))
@@ -185,7 +185,7 @@ func closedAddr(t *testing.T) string {
 	return addr
 }
 
-func TestOpen_ClosedPortIsNotAMiss(t *testing.T) {
+func TestOpenClosedPortIsNotAMiss(t *testing.T) {
 	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -379,7 +379,7 @@ func hungAddr(t *testing.T) string {
 	return l.Addr().String()
 }
 
-func TestOpen_HungServerReturnsAnError(t *testing.T) {
+func TestOpenHungServerReturnsAnError(t *testing.T) {
 	addr := hungAddr(t)
 	tctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()

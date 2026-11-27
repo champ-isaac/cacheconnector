@@ -60,19 +60,19 @@ func OptionsFromURL(u *url.URL, envPrefix string, tls bool) ([]Option, error) {
 	}
 	if tls {
 		q := u.Query()
-		servername := q.Get("servername")
-		if servername == "" {
-			servername = u.Hostname()
+		serverName := q.Get("servername")
+		if serverName == "" {
+			serverName = u.Hostname()
 		}
-		opts = append(opts, WithEnableTls(true), WithCACertPath(q.Get("ca_cert")), WithServerName(servername))
+		opts = append(opts, WithEnableTls(true), WithCACertPath(q.Get("ca_cert")), WithServerName(serverName))
 	}
 	return opts, nil
 }
 
-type adapter struct{ c *Client }
+type adapter struct{ client *Client }
 
 func (a adapter) Get(ctx context.Context, key string) ([]byte, error) {
-	v, err := a.c.raw.Get(ctx, key).Bytes()
+	v, err := a.client.raw.Get(ctx, key).Bytes()
 	if errors.Is(err, goredis.Nil) {
 		return nil, cache.ErrNotFound
 	}
@@ -83,9 +83,11 @@ func (a adapter) Set(ctx context.Context, key string, value []byte, ttl time.Dur
 	if ttl < 0 {
 		ttl = 0
 	}
-	return a.c.raw.Set(ctx, key, value, ttl).Err()
+	return a.client.raw.Set(ctx, key, value, ttl).Err()
 }
 
-func (a adapter) Delete(ctx context.Context, key string) error { return a.c.raw.Del(ctx, key).Err() }
-func (a adapter) Ping(ctx context.Context) error               { return a.c.raw.Ping(ctx).Err() }
-func (a adapter) Close() error                                 { return a.c.Close() }
+func (a adapter) Delete(ctx context.Context, key string) error {
+	return a.client.raw.Del(ctx, key).Err()
+}
+func (a adapter) Ping(ctx context.Context) error { return a.client.raw.Ping(ctx).Err() }
+func (a adapter) Close() error                   { return a.client.Close() }

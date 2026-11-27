@@ -25,13 +25,13 @@ func factory(_ context.Context, u *url.URL) (cache.Cache, error) {
 	return NewCache(New(opts...)), nil
 }
 
-type adapter struct{ c *Client }
+type adapter struct{ client *Client }
 
 func (a adapter) Get(ctx context.Context, key string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	v, ok := a.c.Get(key)
+	v, ok := a.client.Get(key)
 	if !ok {
 		return nil, cache.ErrNotFound
 	}
@@ -42,7 +42,7 @@ func (a adapter) Set(ctx context.Context, key string, value []byte, ttl time.Dur
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	a.c.Set(key, string(value), ttl)
+	a.client.Set(key, string(value), ttl)
 	return nil
 }
 
@@ -50,9 +50,9 @@ func (a adapter) Delete(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	a.c.Delete(key)
+	a.client.Delete(key)
 	return nil
 }
 
 func (a adapter) Ping(ctx context.Context) error { return ctx.Err() }
-func (a adapter) Close() error                   { return a.c.Close() }
+func (a adapter) Close() error                   { return a.client.Close() }
