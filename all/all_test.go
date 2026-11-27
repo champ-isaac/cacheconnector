@@ -37,7 +37,6 @@ func TestFromFileSwitchesDriver(t *testing.T) {
 func TestRedisAndValkeyDeclareTLSPairs(t *testing.T) {
 	ctx := context.Background()
 	for driver, tls := range map[string]string{"redis": "rediss", "valkey": "valkeys"} {
-
 		_, err := cache.FromConfig(ctx, cache.Config{Driver: driver, URL: tls + "://127.0.0.1:1"})
 		require.Error(t, err, driver)
 		assert.NotContains(t, err.Error(), "does not match", driver)

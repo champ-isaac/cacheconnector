@@ -147,7 +147,6 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 }
 
 func buildTLSConfig(caCertPath string, servername string) (*tls.Config, error) {
-
 	caCert, err := os.ReadFile(filepath.Clean(caCertPath)) // #nosec G304 -- trusted config path
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA certificate: %w", err)

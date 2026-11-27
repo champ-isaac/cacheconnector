@@ -38,7 +38,6 @@ func (h *HashRing) Get(key string) string {
 	}
 	hash := hashKey(key)
 	idx := sort.Search(len(h.keys), func(i int) bool {
-
 		return h.keys[i] >= hash
 	})
 	if idx == len(h.keys) {

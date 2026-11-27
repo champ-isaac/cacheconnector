@@ -109,7 +109,6 @@ func (c Config) Resolved() string {
 
 func FromConfig(ctx context.Context, c Config) (Cache, error) {
 	if dsn, name := strings.TrimSpace(c.URL), strings.ToLower(strings.TrimSpace(c.Driver)); dsn != "" && name != "" {
-
 		if u, err := url.Parse(dsn); err == nil {
 			mu.RLock()
 			tls := tlsVariant[name]
@@ -144,7 +143,6 @@ func FromFile(ctx context.Context, path string) (Cache, error) {
 }
 
 func ReadConfig(path string) (Config, error) {
-
 	b, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- trusted config path
 	if err != nil {
 		return Config{}, fmt.Errorf("cache: read config: %w", err)
@@ -213,7 +211,6 @@ func leadingEmpty(b []byte) int {
 func yamlError(path string, err error) error {
 	var te *yaml.TypeError
 	if errors.As(err, &te) {
-
 		return fmt.Errorf("cache: parse config %s: invalid YAML content (expected one mapping with only the keys \"driver\" and \"url\", each set once, and text values)", path)
 	}
 	return fmt.Errorf("cache: parse config %s: YAML syntax error", path)
