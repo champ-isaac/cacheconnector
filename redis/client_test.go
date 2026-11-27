@@ -74,7 +74,7 @@ func TestNewDefaultsAndOptions(t *testing.T) {
 	c, err := New(ctx,
 		WithAddr(mr.Addr()), WithUsername("user"), WithPassword("secret"), WithDB(2), WithProtocol(2),
 		WithPoolSize(5), WithMinIdleConns(1), WithReadTimeout(time.Second), WithWriteTimeout(time.Second),
-		WithEnableTls(false), WithCACertPath(""), WithServerName(""))
+		WithEnableTLS(false), WithCACertPath(""), WithServerName(""))
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, c.Close()) })
 	assert.Equal(t, "PONG", c.Ping(ctx))
@@ -96,29 +96,29 @@ func TestNewErrors(t *testing.T) {
 		assert.Error(t, err)
 	})
 	t.Run("tls needs ca and server name", func(t *testing.T) {
-		_, err := New(ctx, WithEnableTls(true))
+		_, err := New(ctx, WithEnableTLS(true))
 		assert.ErrorContains(t, err, "enableTls requires")
 	})
 	t.Run("tls with unreadable ca", func(t *testing.T) {
-		_, err := New(ctx, WithEnableTls(true), WithCACertPath("/no/such/ca.pem"), WithServerName("x"))
+		_, err := New(ctx, WithEnableTLS(true), WithCACertPath("/no/such/ca.pem"), WithServerName("x"))
 		assert.ErrorContains(t, err, "failed to read CA certificate")
 	})
 	t.Run("tls with invalid pem", func(t *testing.T) {
 		bad := filepath.Join(t.TempDir(), "bad.pem")
 		require.NoError(t, os.WriteFile(bad, []byte("not a pem"), 0o600))
-		_, err := New(ctx, WithEnableTls(true), WithCACertPath(bad), WithServerName("x"))
+		_, err := New(ctx, WithEnableTLS(true), WithCACertPath(bad), WithServerName("x"))
 		assert.ErrorContains(t, err, "failed to append CA certificate")
 	})
 }
 
 func TestNewTLS(t *testing.T) {
 	addr, caPath := tlsServer(t)
-	c, err := New(ctx, WithAddr(addr), WithEnableTls(true), WithCACertPath(caPath), WithServerName("redis.test"))
+	c, err := New(ctx, WithAddr(addr), WithEnableTLS(true), WithCACertPath(caPath), WithServerName("redis.test"))
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, c.Close()) })
 	assert.Equal(t, "PONG", c.Ping(ctx))
 
-	_, err = New(ctx, WithAddr(addr), WithEnableTls(true), WithCACertPath(caPath), WithServerName("other.host"))
+	_, err = New(ctx, WithAddr(addr), WithEnableTLS(true), WithCACertPath(caPath), WithServerName("other.host"))
 	assert.Error(t, err, "server name must match the certificate")
 }
 
@@ -145,7 +145,7 @@ func TestClientKV(t *testing.T) {
 	_, err = c.Get(ctx, "a")
 	assert.Error(t, err)
 
-	require.NoError(t, c.FlushDb(ctx))
+	require.NoError(t, c.FlushDB(ctx))
 	assert.Empty(t, mr.Keys())
 }
 
@@ -166,7 +166,7 @@ func TestClientHash(t *testing.T) {
 	assert.Equal(t, map[string]string{"raw": "x", "active": "1"}, all)
 
 	var out item
-	assert.NoError(t, c.HGetAllNScan(ctx, "h", &out))
+	assert.NoError(t, c.HGetAllScan(ctx, "h", &out))
 	assert.Equal(t, item{Raw: "x", Active: true}, out)
 
 	deleted, err := c.HDel(ctx, "h", "raw", "missing")
@@ -178,7 +178,7 @@ func TestClientSet(t *testing.T) {
 	c, mr := newClient(t)
 	_, err := mr.SAdd("s", "m1", "m2")
 	require.NoError(t, err)
-	members, err := c.SMember(ctx, "s")
+	members, err := c.SMembers(ctx, "s")
 	assert.NoError(t, err)
 	assert.ElementsMatch(t, []string{"m1", "m2"}, members)
 }

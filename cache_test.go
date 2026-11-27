@@ -195,7 +195,7 @@ func TestFromFileSecondDocumentRejected(t *testing.T) {
 	assert.ErrorContains(t, err, "more than one YAML document")
 }
 
-func TestResolved(t *testing.T) {
+func TestDriverName(t *testing.T) {
 	resetRegistry(t)
 	Register("inmemory", stubFactory)
 	Register("fake", stubFactory)
@@ -214,10 +214,10 @@ func TestResolved(t *testing.T) {
 			path := writeConfig(t, body)
 			cfg, err := ReadConfig(path)
 			require.NoError(t, err)
-			assert.Equal(t, want, cfg.Resolved(), body)
+			assert.Equal(t, want, cfg.DriverName(), body)
 			c, err := FromFile(ctx, path)
 			require.NoError(t, err)
-			assert.Equal(t, opened(c), cfg.Resolved(), "Resolved matches what FromFile opened")
+			assert.Equal(t, opened(c), cfg.DriverName(), "DriverName matches what FromFile opened")
 		}
 		_, err := ReadConfig(writeConfig(t, ""))
 		assert.ErrorContains(t, err, "neither driver nor url")
@@ -229,15 +229,15 @@ func TestResolved(t *testing.T) {
 			{Driver: "redis", URL: "rediss://h"}: "rediss",
 			{}:                                   "inmemory",
 		} {
-			assert.Equal(t, want, cfg.Resolved(), "%+v", cfg)
+			assert.Equal(t, want, cfg.DriverName(), "%+v", cfg)
 			c, err := FromConfig(ctx, cfg)
 			require.NoError(t, err)
-			assert.Equal(t, opened(c), cfg.Resolved(), "Resolved matches what FromConfig opened")
+			assert.Equal(t, opened(c), cfg.DriverName(), "DriverName matches what FromConfig opened")
 		}
 	})
 	t.Run("never returns a DSN", func(t *testing.T) {
-		assert.Empty(t, Config{Driver: "redis://:s3cret@h:1"}.Resolved())
-		assert.Empty(t, Config{URL: "redis://:s3cret@h:notaport"}.Resolved())
+		assert.Empty(t, Config{Driver: "redis://:s3cret@h:1"}.DriverName())
+		assert.Empty(t, Config{URL: "redis://:s3cret@h:notaport"}.DriverName())
 	})
 }
 
@@ -322,8 +322,8 @@ func TestSchemeLessDSNDoesNotLeak(t *testing.T) {
 		require.ErrorContains(t, err, "does not match the url scheme")
 		leaks(t, err.Error())
 	})
-	t.Run("Resolved", func(t *testing.T) {
-		assert.Empty(t, Config{URL: dsn}.Resolved())
+	t.Run("DriverName", func(t *testing.T) {
+		assert.Empty(t, Config{URL: dsn}.DriverName())
 	})
 	t.Run("a real scheme is still named", func(t *testing.T) {
 		_, err := Open(ctx, "nope://h")

@@ -56,7 +56,7 @@ func TestMain(m *testing.M) {
 		redis.WithProtocol(2),
 		redis.WithReadTimeout(2*time.Second),
 		redis.WithWriteTimeout(2*time.Second),
-		redis.WithEnableTls(false),
+		redis.WithEnableTLS(false),
 	)
 	if err != nil {
 		panic(err)

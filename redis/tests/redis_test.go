@@ -43,7 +43,7 @@ func TestClientHSetNHGetAllNScan(t *testing.T) {
 		assert.NoError(t, err)
 
 		var out CacheData
-		err = client.HGetAllNScan(ctx, key, &out)
+		err = client.HGetAllScan(ctx, key, &out)
 		assert.NoError(t, err)
 
 		assert.Equal(t, value.Raw, out.Raw)
@@ -64,7 +64,7 @@ func TestClientHSetNHGetAllNScan(t *testing.T) {
 		assert.NoError(t, err)
 
 		var out CacheData
-		err = client.HGetAllNScan(ctx, key, &out)
+		err = client.HGetAllScan(ctx, key, &out)
 		assert.NoError(t, err)
 
 		assert.Equal(t, value.Raw, out.Raw)
@@ -75,7 +75,7 @@ func TestClientHSetNHGetAllNScan(t *testing.T) {
 
 func TestClientKeyNotExistHGetNScan(t *testing.T) {
 	var out CacheData
-	err := client.HGetAllNScan(ctx, "Not_Exist", &out)
+	err := client.HGetAllScan(ctx, "Not_Exist", &out)
 	assert.NoError(t, err)
 	assert.Equal(t, CacheData{}, out)
 }

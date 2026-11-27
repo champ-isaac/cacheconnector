@@ -11,7 +11,7 @@ The maintained source for verifying what a consumer of cacheconnector sees. Read
 
 ## Driving conventions
 
-- Use only the public API: `cache.FromFile`, `Open`, `FromConfig`, `FromEnv`, `Backends`, `Config.Resolved`, and the `Cache` methods.
+- Use only the public API: `cache.FromFile`, `Open`, `FromConfig`, `FromEnv`, `Backends`, `Config.DriverName`, and the `Cache` methods.
 - Open each backend from a YAML config file, the way a deployed program would.
 - Compare errors with `errors.Is(err, cache.ErrNotFound)`, never by message.
 

@@ -90,7 +90,7 @@ type Config struct {
 	URL    string `yaml:"url"`
 }
 
-func (c Config) Resolved() string {
+func (c Config) DriverName() string {
 	name := strings.ToLower(strings.TrimSpace(c.Driver))
 	if dsn := strings.TrimSpace(c.URL); dsn != "" {
 		u, err := url.Parse(dsn)

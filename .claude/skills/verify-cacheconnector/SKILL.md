@@ -5,7 +5,7 @@ description: Prove the cacheconnector Go library works the way a consumer uses i
 
 # Verify cacheconnector
 
-Surface: a Go library, no app. "Driving" it means a small consumer program (`driver/main.go`) that imports only the root package and `all`, builds each backend from a YAML config file, and prints what a caller sees. Primary target: `cache.go` (the `Cache` interface) and `registry.go` (Open, FromFile, FromConfig, FromEnv, Backends, Config.Resolved). Backends: `inmemory` (in process, no server), `redis`, `valkey`, `memcached` (containers from `docker-compose.yaml`).
+Surface: a Go library, no app. "Driving" it means a small consumer program (`driver/main.go`) that imports only the root package and `all`, builds each backend from a YAML config file, and prints what a caller sees. Primary target: `cache.go` (the `Cache` interface) and `registry.go` (Open, FromFile, FromConfig, FromEnv, Backends, Config.DriverName). Backends: `inmemory` (in process, no server), `redis`, `valkey`, `memcached` (containers from `docker-compose.yaml`).
 
 Fast path, from the repo root:
 
@@ -24,7 +24,7 @@ That runs up, doctor, drive, down, and exits non-zero if any check fails. Or ste
 
 ## Doctor
 
-`verify.sh doctor` opens each backend from its YAML file, checks `Config.Resolved()` names the right driver, runs `Ping`, and does one Set/Get/Delete round trip. Run it first when anything looks off. If a port is owned by something else (for example another redis on 6379/6380/6381), stop and say so; do not point the driver at it.
+`verify.sh doctor` opens each backend from its YAML file, checks `Config.DriverName()` names the right driver, runs `Ping`, and does one Set/Get/Delete round trip. Run it first when anything looks off. If a port is owned by something else (for example another redis on 6379/6380/6381), stop and say so; do not point the driver at it.
 
 ## Drive
 

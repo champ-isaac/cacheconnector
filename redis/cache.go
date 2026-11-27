@@ -64,7 +64,7 @@ func OptionsFromURL(u *url.URL, envPrefix string, tls bool) ([]Option, error) {
 		if serverName == "" {
 			serverName = u.Hostname()
 		}
-		opts = append(opts, WithEnableTls(true), WithCACertPath(q.Get("ca_cert")), WithServerName(serverName))
+		opts = append(opts, WithEnableTLS(true), WithCACertPath(q.Get("ca_cert")), WithServerName(serverName))
 	}
 	return opts, nil
 }

@@ -77,7 +77,7 @@ func WithWriteTimeout(timeout time.Duration) Option {
 		c.writeTimeout = timeout
 	}
 }
-func WithEnableTls(enable bool) Option {
+func WithEnableTLS(enable bool) Option {
 	return func(c *Client) {
 		c.enableTLS = enable
 	}
