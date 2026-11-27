@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- A project skill, `formal-verify-ttl` (`.claude/skills/formal-verify-ttl`), checks the TTL promise on the real code. It tries every case in a stated bound for `memcached` expiry and for the `inmemory` client. It also checks that `inmemory.WithCleanupInterval` never leaves the interval at zero or less (the guard from [#19](https://github.com/champ-isaac/cacheconnector/pull/19)), and that the background janitor sweeps and stops on `Close`. Added in [#18](https://github.com/champ-isaac/cacheconnector/pull/18), synced with `develop` in [#22](https://github.com/champ-isaac/cacheconnector/pull/22), and extended to the cleanup interval in [#23](https://github.com/champ-isaac/cacheconnector/pull/23). Run it with `.claude/skills/formal-verify-ttl/scripts/verify.sh check`. It is repo tooling, so no change is needed in calling code.
+
 ### Changed
 
 - **Breaking.** Five exported identifiers are renamed in [#16](https://github.com/champ-isaac/cacheconnector/pull/16) (`2602fd9`). The old names are removed, with no deprecated aliases, so code that uses them stops compiling until it switches to the new name. Behavior is unchanged.
