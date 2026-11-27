@@ -92,3 +92,24 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+
+  verify:
+    name: Verify Backends
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Starts only the three servers the verify skill drives (not redis-ui).
+      # Ports and container names come from docker-compose.yaml; verify.sh
+      # waits until each backend answers a Set/Get round trip.
+      - name: Start redis, valkey and memcached
+        run: docker compose up -d redis valkey memcached
+      - name: Verify all backends through the public API
+        run: .claude/skills/verify-cacheconnector/scripts/verify.sh all
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-evidence
+          path: .claude/verify-evidence
