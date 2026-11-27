@@ -26,27 +26,19 @@ const (
 var (
 	ctx    = context.Background()
 	client *memcached.Client
-	raw    *memcache.Client // used only to flush the server around the run
+	raw    *memcache.Client
 )
 
-// newCache opens a new connection to the memcached backend.
 func newCache(t *testing.T) *memcached.Client {
 	t.Helper()
 	return memcached.New([]string{MemcachedHost}, memcached.WithTimeout(2*time.Second))
 }
 
-// itemCount returns the number of live items on the server. It counts the
-// keys in a metadump, not the curr_items stat: curr_items keeps counting
-// flushed items until the server reclaims them, which would make a run that
-// follows another one look like it found foreign data.
 func itemCount() (int, error) {
 	lines, err := metadump()
 	return len(lines), err
 }
 
-// metadump returns one "key=..." line for each live item on the server. A line
-// has fields such as exp= (the expiry as an absolute Unix time, -1 for none)
-// and la= (the last access time).
 func metadump() ([]string, error) {
 	conn, err := net.DialTimeout("tcp", MemcachedHost, 2*time.Second)
 	if err != nil {
@@ -70,8 +62,6 @@ func metadump() ([]string, error) {
 	return nil, errors.New("memcached metadump did not end with END")
 }
 
-// serverStat returns a numeric value from the server's stats, such as
-// curr_connections.
 func serverStat(name string) (int, error) {
 	conn, err := net.DialTimeout("tcp", MemcachedHost, 2*time.Second)
 	if err != nil {
@@ -104,9 +94,7 @@ func TestMain(m *testing.M) {
 	if err := client.Ping(ctx); err != nil {
 		panic(err)
 	}
-	// Memcached has no databases, so the flush below wipes the whole server.
-	// Only do it on an empty server, or when MEMCACHED_TEST_FLUSH=1 says the
-	// data on it is disposable.
+
 	n, err := itemCount()
 	if err != nil {
 		panic(err)
@@ -122,7 +110,6 @@ func TestMain(m *testing.M) {
 	}
 	exitCode := m.Run()
 
-	//teardown
 	_ = raw.FlushAll()
 	_ = client.Close()
 	os.Exit(exitCode)

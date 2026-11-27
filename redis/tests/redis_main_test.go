@@ -40,7 +40,6 @@ func TestMain(m *testing.M) {
 	}
 	exitCode := m.Run()
 
-	//teardown
 	defer func() {
 		_ = client.Close()
 	}()

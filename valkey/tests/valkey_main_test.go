@@ -17,23 +17,19 @@ import (
 const (
 	ValkeyHost     = "127.0.0.1:6380"
 	ValkeyPassword = "user"
-	// ValkeyDB is a database of its own, so the tests can flush it without
-	// touching anything else on the server.
+
 	ValkeyDB = 1
 )
 
 var (
 	ctx    = context.Background()
-	client *redis.Client // used only to flush ValkeyDB around the run
+	client *redis.Client
 )
 
-// dsn is the DSN the tests open. The server is reached through the valkey
-// backend, which reuses the Redis client.
 func dsn() string {
 	return fmt.Sprintf("valkey://:%s@%s/%d", ValkeyPassword, ValkeyHost, ValkeyDB)
 }
 
-// newCache opens a new connection to the valkey backend.
 func newCache(t *testing.T) cache.Cache {
 	t.Helper()
 	c, err := cache.Open(ctx, dsn())
@@ -68,7 +64,6 @@ func TestMain(m *testing.M) {
 	flush()
 	exitCode := m.Run()
 
-	//teardown
 	flush()
 	_ = client.Close()
 	os.Exit(exitCode)

@@ -1,10 +1,3 @@
-// Command driver is the verification consumer for cacheconnector. It uses only
-// the public API a program would: cache.FromFile / FromConfig / Open / FromEnv,
-// Backends and Config.Resolved, and the five Cache methods. It never imports a
-// backend package directly (only "all"), never flushes a server, and only
-// touches keys under its own run prefix.
-//
-//	go run ./.claude/skills/verify-cacheconnector/driver -mode doctor|drive -out <dir> -run <id>
 package main
 
 import (
@@ -22,11 +15,10 @@ import (
 	_ "github.com/champ-isaac/cacheconnector/all"
 )
 
-// target is one backend as a consumer would configure it: a YAML file.
 type target struct {
-	name string // expected driver name
+	name string
 	yaml string
-	// emptyKeyOK is the documented behaviour of Set("") for this backend.
+
 	emptyKeyOK bool
 }
 
@@ -86,7 +78,6 @@ func open(ctx context.Context, t target, dir string) (cache.Cache, cache.Config,
 	return c, cfg, err
 }
 
-// doctor: is each backend worth driving? Open, Ping and one Set/Get/Delete round trip.
 func doctor(ctx context.Context, dir, run string) {
 	for _, t := range targets {
 		fmt.Printf("doctor %s\n", t.name)
@@ -109,7 +100,6 @@ func doctor(ctx context.Context, dir, run string) {
 	}
 }
 
-// registry: the root package's own behaviour, backend independent.
 func registry(ctx context.Context, dir string) {
 	fmt.Println("registry")
 	names := cache.Backends()
@@ -172,27 +162,22 @@ func drive(ctx context.Context, t target, dir, run string) {
 	perr := c.Ping(ctx)
 	check(perr == nil, "Ping", fmt.Sprint(perr))
 
-	// Get on a missing key.
 	v, err := c.Get(ctx, p+"missing")
 	check(errors.Is(err, cache.ErrNotFound) && v == nil, "Get(missing)", fmt.Sprintf("value=%q err=%v", v, err))
 
-	// Set then Get.
 	err = set("a", []byte("hello"), time.Minute)
 	v, gerr := c.Get(ctx, p+"a")
 	check(err == nil && gerr == nil && string(v) == "hello", "Set then Get", fmt.Sprintf("set err=%v, got %q", err, v))
 
-	// Overwrite.
 	_ = set("a", []byte("world"), time.Minute)
 	v, _ = c.Get(ctx, p+"a")
 	check(string(v) == "world", "Set again overwrites", fmt.Sprintf("got %q", v))
 
-	// Binary value, including zero bytes and non-UTF-8.
 	bin := []byte{0, 1, 2, 0xff, 0xfe, 0, '\n', '\r', ' '}
 	_ = set("bin", bin, 0)
 	v, _ = c.Get(ctx, p+"bin")
 	check(bytes.Equal(v, bin), "binary value round trips (ttl 0 = no expiry)", fmt.Sprintf("got %v", v))
 
-	// The returned slice is the caller's: changing it must not change the cache.
 	v, _ = c.Get(ctx, p+"a")
 	for i := range v {
 		v[i] = 'X'
@@ -200,19 +185,16 @@ func drive(ctx context.Context, t target, dir, run string) {
 	v2, _ := c.Get(ctx, p+"a")
 	check(string(v2) == "world", "modifying a returned slice does not change the cached value", fmt.Sprintf("got %q", v2))
 
-	// Delete, then Delete again.
 	err = c.Delete(ctx, p+"a")
 	_, gerr = c.Get(ctx, p+"a")
 	check(err == nil && errors.Is(gerr, cache.ErrNotFound), "Delete then Get", fmt.Sprintf("delete err=%v, get err=%v", err, gerr))
 	err = c.Delete(ctx, p+"a")
 	check(err == nil, "Delete of a missing key is not an error", fmt.Sprint(err))
 
-	// Key with characters that are legal on every backend.
 	_ = set("with:colon/slash-1.2", []byte("k"), time.Minute)
 	v, _ = c.Get(ctx, p+"with:colon/slash-1.2")
 	check(string(v) == "k", "key with : / - . round trips", fmt.Sprintf("got %q", v))
 
-	// Empty key: documented difference between backends.
 	err = c.Set(ctx, "", []byte("e"), time.Minute)
 	if t.emptyKeyOK {
 		_, gerr = c.Get(ctx, "")
@@ -224,7 +206,6 @@ func drive(ctx context.Context, t target, dir, run string) {
 			`Set("") and Get("") return an error that is not ErrNotFound`, fmt.Sprintf("set err=%v get err=%v", err, gerr))
 	}
 
-	// Context: a context that is already cancelled must not hang.
 	cctx, cancel := context.WithCancel(ctx)
 	cancel()
 	done := make(chan struct{})
@@ -236,8 +217,6 @@ func drive(ctx context.Context, t target, dir, run string) {
 		check(false, "Get with a cancelled context returns promptly", "still blocked after 5s")
 	}
 
-	// TTL: a 2s ttl is readable now and gone after 3.2s on every backend
-	// (memcached rounds up to whole seconds and can live up to 1s shorter).
 	_ = set("ttl", []byte("soon"), 2*time.Second)
 	v, gerr = c.Get(ctx, p+"ttl")
 	check(gerr == nil && string(v) == "soon", "Get right after Set with ttl 2s", fmt.Sprintf("got %q err=%v", v, gerr))

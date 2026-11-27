@@ -11,10 +11,8 @@ import (
 
 func init() { cache.Register("inmemory", factory) }
 
-// NewCache adapts a Client to cache.Cache. Closing the cache closes the Client.
 func NewCache(c *Client) cache.Cache { return adapter{c} }
 
-// factory opens "inmemory:", with the optional query cleanup_interval=30s.
 func factory(_ context.Context, u *url.URL) (cache.Cache, error) {
 	var opts []Option
 	if s := u.Query().Get("cleanup_interval"); s != "" {
@@ -37,7 +35,7 @@ func (a adapter) Get(ctx context.Context, key string) ([]byte, error) {
 	if !ok {
 		return nil, cache.ErrNotFound
 	}
-	return []byte(v), nil // string -> []byte copies, so callers own the result
+	return []byte(v), nil
 }
 
 func (a adapter) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {

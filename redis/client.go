@@ -16,7 +16,6 @@ type Client struct {
 	raw  *redis.Client
 	pipe redis.Pipeliner
 
-	//properties
 	addr         string
 	username     string
 	password     string
@@ -31,7 +30,6 @@ type Client struct {
 	servername   string
 }
 
-// Option pattern use
 type Option func(*Client)
 
 func WithAddr(addr string) Option {
@@ -119,8 +117,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		MinIdleConns: client.minIdleConns,
 		ReadTimeout:  client.readTimeout,
 		WriteTimeout: client.writeTimeout,
-		// Without this go-redis ignores a call's context deadline on the socket
-		// and waits for ReadTimeout instead.
+
 		ContextTimeoutEnabled: true,
 	}
 	if client.username != "" {
@@ -141,7 +138,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	}
 	rsClient := redis.NewClient(rsOpts)
 	if err := rsClient.Ping(ctx).Err(); err != nil {
-		_ = rsClient.Close() // do not leak the pool when the caller retries
+		_ = rsClient.Close()
 		return nil, err
 	}
 	client.raw = rsClient
@@ -150,8 +147,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 }
 
 func buildTLSConfig(caCertPath string, servername string) (*tls.Config, error) {
-	// caCertPath is operator-supplied configuration (not untrusted input) and may
-	// legitimately be any absolute path, so os.Root scoping does not apply.
+
 	caCert, err := os.ReadFile(filepath.Clean(caCertPath)) // #nosec G304 -- trusted config path
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA certificate: %w", err)

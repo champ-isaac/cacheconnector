@@ -19,8 +19,6 @@ func openInmemory(b *testing.B) cache.Cache {
 	return c
 }
 
-// truncating returns every value one byte short, like a backend that cuts off
-// what it stores.
 type truncating struct{ cache.Cache }
 
 func (t truncating) Get(ctx context.Context, key string) ([]byte, error) {
@@ -31,8 +29,6 @@ func (t truncating) Get(ctx context.Context, key string) ([]byte, error) {
 	return v, err
 }
 
-// oneIteration makes testing.Benchmark run each benchmark once. It returns N=0
-// for a benchmark that failed and N>0 for one that passed.
 func oneIteration(t *testing.T) {
 	t.Helper()
 	f := flag.Lookup("test.benchtime")
@@ -42,8 +38,6 @@ func oneIteration(t *testing.T) {
 	t.Cleanup(func() { _ = f.Value.Set(old) })
 }
 
-// Benchmarks only run under -bench, so run each case once: one that fails its
-// own checks (a wrong value, an unexpected error) then fails go test too.
 func TestBenchCasesPass(t *testing.T) {
 	oneIteration(t)
 	cases := benchCases(openInmemory)
@@ -53,9 +47,6 @@ func TestBenchCasesPass(t *testing.T) {
 	}
 }
 
-// A benchmark that cannot tell a wrong answer from a right one only measures
-// how fast a cache returns garbage. Every Get benchmark must fail on a cache
-// that truncates values.
 func TestBenchCasesCatchTruncatedValues(t *testing.T) {
 	oneIteration(t)
 	open := func(b *testing.B) cache.Cache {
@@ -74,8 +65,6 @@ func TestBenchCasesCatchTruncatedValues(t *testing.T) {
 	assert.Equal(t, 4, checked, "three sequential sizes and one parallel case")
 }
 
-// A Set benchmark checks that the value it wrote reads back. Reads that are
-// short must fail it too.
 func TestSetBenchCasesCatchTruncatedValues(t *testing.T) {
 	oneIteration(t)
 	open := func(b *testing.B) cache.Cache {

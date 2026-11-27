@@ -32,7 +32,6 @@ func newClient(t *testing.T, opts ...Option) (*Client, *miniredis.Miniredis) {
 	return c, mr
 }
 
-// tlsServer starts a TLS miniredis and returns its address and the CA file that signs it.
 func tlsServer(t *testing.T) (addr, caPath string) {
 	t.Helper()
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

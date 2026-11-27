@@ -19,17 +19,8 @@ func init() {
 	cache.Register("rediss", Factory("REDIS", true))
 }
 
-// NewCache adapts a Client to cache.Cache. Closing the cache closes the Client.
 func NewCache(c *Client) cache.Cache { return adapter{c} }
 
-// Factory returns the cache.Factory for a Redis-protocol server. The Valkey
-// package reuses it, since Valkey speaks the same protocol.
-//
-// DSN: scheme://[user]:[password]@host:port/db. With tls the scheme is
-// "rediss" (or "valkeys") and the query must give ca_cert=/path/ca.pem; it
-// may give servername=, which defaults to the host. A DSN with no host, as
-// FromEnv builds, reads the <envPrefix>_ADDR, _USERNAME, _PASSWORD and _DB
-// environment variables instead. Errors never contain the password.
 func Factory(envPrefix string, tls bool) cache.Factory {
 	return func(ctx context.Context, u *url.URL) (cache.Cache, error) {
 		opts, err := OptionsFromURL(u, envPrefix, tls)
@@ -44,7 +35,6 @@ func Factory(envPrefix string, tls bool) cache.Factory {
 	}
 }
 
-// OptionsFromURL turns a DSN into Options, see Factory for the format.
 func OptionsFromURL(u *url.URL, envPrefix string, tls bool) ([]Option, error) {
 	if u.Host == "" {
 		if tls {
@@ -91,7 +81,7 @@ func (a adapter) Get(ctx context.Context, key string) ([]byte, error) {
 
 func (a adapter) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	if ttl < 0 {
-		ttl = 0 // go-redis reserves negative values; the cache contract says no expiry
+		ttl = 0
 	}
 	return a.c.raw.Set(ctx, key, value, ttl).Err()
 }

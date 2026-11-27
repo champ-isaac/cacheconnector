@@ -36,7 +36,7 @@ func TestHashRing_WrapsAround(t *testing.T) {
 	last := ring.keys[len(ring.keys)-1]
 	for i := 0; ; i++ {
 		key := fmt.Sprintf("probe%d", i)
-		if hashKey(key) > last { // past the last slot: must wrap to the first one
+		if hashKey(key) > last {
 			assert.Equal(t, "only", ring.Get(key))
 			return
 		}

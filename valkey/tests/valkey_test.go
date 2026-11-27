@@ -21,19 +21,15 @@ import (
 	"github.com/champ-isaac/cacheconnector/cachetest"
 )
 
-// The shared contract every backend must pass, against a real Valkey. The TTL
-// cases sleep for real, because the server's clock cannot be moved.
 func TestCache_Contract(t *testing.T) {
 	cachetest.Run(t, newCache, nil)
 }
 
-// The valkey backend reads VALKEY_* variables, not REDIS_*, when a name and no
-// DSN select it.
 func TestFromEnv_UsesValkeyVariables(t *testing.T) {
 	t.Setenv("VALKEY_ADDR", ValkeyHost)
 	t.Setenv("VALKEY_PASSWORD", ValkeyPassword)
 	t.Setenv("VALKEY_DB", strconv.Itoa(ValkeyDB))
-	t.Setenv("REDIS_ADDR", "127.0.0.1:1") // must not be used
+	t.Setenv("REDIS_ADDR", "127.0.0.1:1")
 	t.Setenv(cache.EnvBackend, "valkey")
 	t.Setenv(cache.EnvURL, "")
 
@@ -43,15 +39,12 @@ func TestFromEnv_UsesValkeyVariables(t *testing.T) {
 
 	require.NoError(t, c.Ping(ctx))
 	require.NoError(t, c.Set(ctx, "env:key", []byte("v"), 0))
-	defer func() { assert.NoError(t, c.Delete(ctx, "env:key")) }() // runs before the Close above
+	defer func() { assert.NoError(t, c.Delete(ctx, "env:key")) }()
 	v, err := c.Get(ctx, "env:key")
 	require.NoError(t, err)
 	assert.Equal(t, []byte("v"), v)
 }
 
-// A wrong password is refused by the server when the connection is opened (a
-// WRONGPASS or NOAUTH reply, not a network error), and the error does not
-// repeat the password.
 func TestOpen_WrongPasswordFails(t *testing.T) {
 	const wrong = "not-the-password"
 	_, err := cache.Open(ctx, "valkey://:"+wrong+"@"+ValkeyHost+"/"+strconv.Itoa(ValkeyDB))
@@ -60,15 +53,13 @@ func TestOpen_WrongPasswordFails(t *testing.T) {
 	assert.NotContains(t, err.Error(), wrong)
 }
 
-// A key set through one connection is visible through another, so the data is
-// on the server and not in the client.
 func TestSetIsSharedAcrossConnections(t *testing.T) {
 	a, b := newCache(t), newCache(t)
 	defer func() { assert.NoError(t, a.Close()) }()
 	defer func() { assert.NoError(t, b.Close()) }()
 
 	require.NoError(t, a.Set(ctx, "shared", []byte("from-a"), 0))
-	defer func() { assert.NoError(t, a.Delete(ctx, "shared")) }() // runs before the Closes above
+	defer func() { assert.NoError(t, a.Delete(ctx, "shared")) }()
 	v, err := b.Get(ctx, "shared")
 	require.NoError(t, err)
 	assert.Equal(t, []byte("from-a"), v)
@@ -77,30 +68,23 @@ func TestSetIsSharedAcrossConnections(t *testing.T) {
 	assert.ErrorIs(t, err, cache.ErrNotFound)
 }
 
-// A connection with no password is refused with a NOAUTH reply, because the
-// compose server runs with --requirepass.
 func TestOpen_NoPasswordFails(t *testing.T) {
 	_, err := cache.Open(ctx, "valkey://"+ValkeyHost+"/"+strconv.Itoa(ValkeyDB))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NOAUTH")
 }
 
-// Valkey has 16 databases by default, so selecting database 999 is refused.
 func TestOpen_DatabaseOutOfRangeFails(t *testing.T) {
 	_, err := cache.Open(ctx, "valkey://:"+ValkeyPassword+"@"+ValkeyHost+"/999")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "DB index is out of range")
 }
 
-// Valkey keys are binary safe, so any byte string is a key: spaces, newlines,
-// CRLF with a command in it, a very long name, UTF-8 and the empty key. Memcached
-// refuses several of these. A canary key shows that the CRLF key was stored as a
-// name and did not run its command.
 func TestArbitraryKeysRoundTrip(t *testing.T) {
 	c := newCache(t)
 	defer func() { assert.NoError(t, c.Close()) }()
 	require.NoError(t, c.Set(ctx, "keys-canary", []byte("canary"), 0))
-	defer func() { assert.NoError(t, c.Delete(ctx, "keys-canary")) }() // runs before the Close above
+	defer func() { assert.NoError(t, c.Delete(ctx, "keys-canary")) }()
 
 	for name, key := range map[string]string{
 		"space":      "has space",
@@ -121,8 +105,6 @@ func TestArbitraryKeysRoundTrip(t *testing.T) {
 	assert.Equal(t, []byte("canary"), v)
 }
 
-// A DSN can name the ACL user: valkey://user:password@host. The compose server
-// has the default user, and an unknown user is refused with WRONGPASS.
 func TestOpen_UsernameInDSN(t *testing.T) {
 	c, err := cache.Open(ctx, "valkey://default:"+ValkeyPassword+"@"+ValkeyHost+"/"+strconv.Itoa(ValkeyDB))
 	require.NoError(t, err)
@@ -134,13 +116,11 @@ func TestOpen_UsernameInDSN(t *testing.T) {
 	assert.Contains(t, err.Error(), "WRONGPASS")
 }
 
-// VALKEY_USERNAME is read like the other VALKEY_* variables, and REDIS_USERNAME
-// is not. A wrong user name is refused with WRONGPASS.
 func TestFromEnv_UsesValkeyUsername(t *testing.T) {
 	t.Setenv("VALKEY_ADDR", ValkeyHost)
 	t.Setenv("VALKEY_PASSWORD", ValkeyPassword)
 	t.Setenv("VALKEY_DB", strconv.Itoa(ValkeyDB))
-	t.Setenv("REDIS_USERNAME", "nobody") // must not be used
+	t.Setenv("REDIS_USERNAME", "nobody")
 	t.Setenv(cache.EnvBackend, "valkey")
 	t.Setenv(cache.EnvURL, "")
 
@@ -160,7 +140,6 @@ func TestFromEnv_UsesValkeyUsername(t *testing.T) {
 	})
 }
 
-// connectedClients is the server's count of open client connections.
 func connectedClients() (int, error) {
 	info, err := client.Raw().Info(ctx, "clients").Result()
 	if err != nil {
@@ -174,10 +153,6 @@ func connectedClients() (int, error) {
 	return 0, errors.New("connected_clients not found in INFO clients")
 }
 
-// Close gives its connections back to the server. Ten caches are opened and
-// used, the server's client count rises by at least ten, and after Close it is
-// back to where it started. The server notices a closed connection a moment
-// later, so both checks retry.
 func TestCloseReleasesConnections(t *testing.T) {
 	base, err := connectedClients()
 	require.NoError(t, err)
@@ -201,8 +176,6 @@ func TestCloseReleasesConnections(t *testing.T) {
 	}, 3*time.Second, 50*time.Millisecond, "after Close the server's client count is back to the start")
 }
 
-// closedAddr returns a local address that nothing listens on: a port that was
-// free a moment ago.
 func closedAddr(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -212,10 +185,6 @@ func closedAddr(t *testing.T) string {
 	return addr
 }
 
-// The valkey backend connects when it is opened, so a server that cannot be
-// reached fails there, before any Get. It must be an error that is not a miss,
-// and it must come back within the context's deadline. The Redis client logs
-// each failed dial, so this test prints a few "failed to dial" lines.
 func TestOpen_ClosedPortIsNotAMiss(t *testing.T) {
 	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -231,8 +200,6 @@ func TestOpen_ClosedPortIsNotAMiss(t *testing.T) {
 	assert.Less(t, time.Since(start), 10*time.Second, "the call fails within the context deadline")
 }
 
-// proxy forwards TCP connections from a local port to target, so a test can cut
-// the link while a client is connected, without stopping the container.
 type proxy struct {
 	l      net.Listener
 	mu     sync.Mutex
@@ -241,9 +208,6 @@ type proxy struct {
 	frozen atomic.Bool
 }
 
-// freeze makes the proxy read what clients send and drop it. The server never
-// sees it and never replies, and the connections stay open: a link that has
-// gone silent rather than closed.
 func (p *proxy) freeze() { p.frozen.Store(true) }
 
 func startProxy(t *testing.T, target string) *proxy {
@@ -251,8 +215,6 @@ func startProxy(t *testing.T, target string) *proxy {
 	return startProxyAt(t, "127.0.0.1:0", target)
 }
 
-// startProxyAt listens on addr, so a test can bring a proxy back on the address
-// a stopped one used.
 func startProxyAt(t *testing.T, addr, target string) *proxy {
 	t.Helper()
 	l, err := net.Listen("tcp", addr)
@@ -295,7 +257,6 @@ func startProxyAt(t *testing.T, addr, target string) *proxy {
 
 func (p *proxy) addr() string { return p.l.Addr().String() }
 
-// stop closes the listener and every open connection. It is safe to call twice.
 func (p *proxy) stop() {
 	p.once.Do(func() {
 		_ = p.l.Close()
@@ -307,12 +268,9 @@ func (p *proxy) stop() {
 	})
 }
 
-// If the server goes away after the connection is open, the next Get is an
-// error, not a miss. The cache is opened through a proxy, used once, and then
-// the proxy is stopped.
 func TestGetAfterServerGoesAwayIsNotAMiss(t *testing.T) {
 	const key = "outage-key"
-	direct := newCache(t) // not through the proxy, used to clean up
+	direct := newCache(t)
 	defer func() { assert.NoError(t, direct.Close()) }()
 	defer func() { assert.NoError(t, direct.Delete(ctx, key)) }()
 
@@ -337,12 +295,9 @@ func TestGetAfterServerGoesAwayIsNotAMiss(t *testing.T) {
 	assert.Less(t, time.Since(start), 10*time.Second, "the call fails on its own, before the 15s deadline")
 }
 
-// After an outage the client must reconnect by itself once the server is back,
-// not stay broken. The proxy is stopped, the cache fails, and a new proxy takes
-// the same address.
 func TestRecoversAfterServerComesBack(t *testing.T) {
 	const key = "recovery-key"
-	direct := newCache(t) // not through the proxy, used to clean up
+	direct := newCache(t)
 	defer func() { assert.NoError(t, direct.Close()) }()
 	defer func() { assert.NoError(t, direct.Delete(ctx, key)) }()
 
@@ -367,12 +322,9 @@ func TestRecoversAfterServerComesBack(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "the client reads the key again once the server is back")
 }
 
-// A call's context deadline must end the call, even when the link has gone
-// silent. The client's own read timeout is 2s, so a 400ms deadline that is
-// honoured returns well before that.
 func TestGetHonoursContextDeadlineOnFrozenLink(t *testing.T) {
 	const key = "frozen-key"
-	direct := newCache(t) // not through the proxy, used to clean up
+	direct := newCache(t)
 	defer func() { assert.NoError(t, direct.Close()) }()
 	defer func() { assert.NoError(t, direct.Delete(ctx, key)) }()
 
@@ -399,8 +351,6 @@ func TestGetHonoursContextDeadlineOnFrozenLink(t *testing.T) {
 	assert.Less(t, elapsed, time.Second, "the call ends at its 400ms deadline, not at the client's 2s read timeout")
 }
 
-// hungAddr returns the address of a listener that accepts connections and never
-// replies, like a server that has hung. It is closed when the test ends.
 func hungAddr(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -429,8 +379,6 @@ func hungAddr(t *testing.T) string {
 	return l.Addr().String()
 }
 
-// A server that accepts the connection and never answers must make Open fail at
-// the client's own read timeout, not block the caller.
 func TestOpen_HungServerReturnsAnError(t *testing.T) {
 	addr := hungAddr(t)
 	tctx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -459,10 +407,6 @@ func TestOpen_HungServerReturnsAnError(t *testing.T) {
 	}
 }
 
-// The same 30-day ttl the memcached test checks, read back with the TTL
-// command. Thirty days is where the Memcached client switches from relative
-// seconds to an absolute Unix time, so this pins that boundary on both
-// backends. It is not a check of the 2038 limit, which Valkey does not have.
 func TestThirtyDayTTLIsStored(t *testing.T) {
 	c := newCache(t)
 	defer func() { assert.NoError(t, c.Close()) }()
@@ -470,7 +414,7 @@ func TestThirtyDayTTLIsStored(t *testing.T) {
 	const thirtyDays = 30 * 24 * time.Hour
 
 	require.NoError(t, c.Set(ctx, key, []byte("v"), thirtyDays))
-	defer func() { assert.NoError(t, c.Delete(ctx, key)) }() // runs before the Close above
+	defer func() { assert.NoError(t, c.Delete(ctx, key)) }()
 
 	ttl, err := client.Raw().TTL(ctx, key).Result()
 	require.NoError(t, err)

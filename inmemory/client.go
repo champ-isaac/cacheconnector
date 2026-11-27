@@ -1,4 +1,3 @@
-// Package inmemory is a process-local cache with TTL, the same idea as Redis SET with EX.
 package inmemory
 
 import (
@@ -8,7 +7,7 @@ import (
 
 type entry struct {
 	value   string
-	expires time.Time // zero means the entry never expires
+	expires time.Time
 }
 
 type Client struct {
@@ -24,7 +23,6 @@ type Client struct {
 
 type Option func(*Client)
 
-// WithCleanupInterval sets how often expired entries are swept, default 1 minute.
 func WithCleanupInterval(d time.Duration) Option {
 	return func(c *Client) { c.interval = d }
 }
@@ -44,7 +42,6 @@ func New(opts ...Option) *Client {
 	return c
 }
 
-// Get returns the value of key and false when the key is missing or expired.
 func (c *Client) Get(key string) (string, bool) {
 	c.mu.RLock()
 	e, ok := c.data[key]
@@ -55,7 +52,6 @@ func (c *Client) Get(key string) (string, bool) {
 	return e.value, true
 }
 
-// Set stores value, a ttl of zero or less means the key never expires.
 func (c *Client) Set(key, value string, ttl time.Duration) {
 	e := entry{value: value}
 	if ttl > 0 {
@@ -72,7 +68,6 @@ func (c *Client) Delete(key string) {
 	c.mu.Unlock()
 }
 
-// Close stops the background sweeper, it is safe to call more than once.
 func (c *Client) Close() error {
 	c.stopOnce.Do(func() { close(c.stop) })
 	<-c.done

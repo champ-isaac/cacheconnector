@@ -57,7 +57,6 @@ func TestSet_TTLOnTheWire(t *testing.T) {
 	require.NoError(t, c.Set(ctx, "k", []byte("v"), 1500*time.Millisecond))
 	assert.EqualValues(t, 2, srv.lastExptime)
 
-	// Past 30 days Memcached wants an absolute time, taken from the client clock.
 	c.now = srv.now
 	require.NoError(t, c.Set(ctx, "far", []byte("v"), 31*24*time.Hour))
 	assert.Equal(t, srv.now().Add(31*24*time.Hour).Unix(), srv.lastExptime)
@@ -99,7 +98,7 @@ func TestFactory_FromEnv(t *testing.T) {
 	require.NoError(t, c.Close())
 
 	t.Setenv("MEMCACHED_ADDRS", "")
-	c, err = cache.FromEnv(ctx) // falls back to 127.0.0.1:11211, not contacted here
+	c, err = cache.FromEnv(ctx)
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
 }

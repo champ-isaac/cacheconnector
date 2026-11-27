@@ -31,7 +31,7 @@ func TestClient_SetGetDelete(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "v", v)
 
-	c.Set("k", "v2", -time.Second) // negative ttl also means no expiry
+	c.Set("k", "v2", -time.Second)
 	v, _ = c.Get("k")
 	assert.Equal(t, "v2", v)
 
