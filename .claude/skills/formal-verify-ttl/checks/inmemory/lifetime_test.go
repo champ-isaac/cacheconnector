@@ -42,7 +42,7 @@ func opName(op int) string {
 func TestFormalEveryOperationSequence(t *testing.T) {
 	var clockSecs int
 	c := New(WithCleanupInterval(time.Hour))
-	defer func() { _ = c.Close() }()
+	defer func() { go func() { _ = c.Close() }() }()
 	c.now = func() time.Time { return time.Unix(1000+int64(clockSecs), 0) }
 
 	total := 0
