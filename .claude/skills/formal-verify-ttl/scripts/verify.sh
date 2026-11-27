@@ -17,9 +17,10 @@ cd "$REPO"
 overlay() { # overlay <out.json> [<repo-relative real file> <replacement>]
   out=$1; shift
   {
-    printf '{"Replace":{"%s":"%s","%s":"%s"' \
+    printf '{"Replace":{"%s":"%s","%s":"%s","%s":"%s"' \
       "$REPO/memcached/zz_formal_test.go" "$SKILL/checks/memcached/expiration_test.go" \
-      "$REPO/inmemory/zz_formal_test.go" "$SKILL/checks/inmemory/lifetime_test.go"
+      "$REPO/inmemory/zz_formal_test.go" "$SKILL/checks/inmemory/lifetime_test.go" \
+      "$REPO/inmemory/zz_formal_cleanup_test.go" "$SKILL/checks/inmemory/cleanup_test.go"
     [ $# -eq 2 ] && printf ',"%s":"%s"' "$REPO/$1" "$2"
     printf '}}'
   } > "$out"
@@ -46,7 +47,7 @@ mutate() { # mutate <name> <file> <perl -0 expression>; prints whether the check
   overlay "$WORK/m.json" "$file" "$WORK/mutant.go"
   if run "$WORK/m.json" "./$(dirname "$file")" > "$WORK/m.out" 2>&1; then echo "MISSED $name"; return 1; fi
   if grep -q 'build failed\|setup failed' "$WORK/m.out"; then echo "BROKEN $name: mutant did not compile"; return 2; fi
-  echo "CAUGHT $name: $(grep -E 'zz_formal_test\.go:[0-9]+:' "$WORK/m.out" | grep -v 'checked ' | head -1 | sed 's/^ *zz_formal_test.go:[0-9]*: //' | cut -c1-160)"
+  echo "CAUGHT $name: $(grep -E 'zz_formal(_cleanup)?_test\.go:[0-9]+:|^panic:' "$WORK/m.out" | grep -v 'checked ' | head -1 | sed -E 's/^ *zz_formal(_cleanup)?_test.go:[0-9]*: //' | cut -c1-160)"
 }
 
 case "${1:-}" in
@@ -64,6 +65,10 @@ case "${1:-}" in
     mutate "inmemory: entry lives one tick past its deadline"   inmemory/client.go  's/!now\.Before\(e\.expires\)/now.After(e.expires)/' || bad=1
     mutate "inmemory: sweep deletes live entries"               inmemory/client.go  's/if e\.expired\(now\) \{/if e.expired(now) || !e.expires.IsZero() {/' || bad=1
     mutate "inmemory: negative ttl expires at once"             inmemory/client.go  's/if ttl > 0 \{/if ttl != 0 {/'               || bad=1
+    mutate "inmemory: non-positive cleanup interval accepted (the #19 regression)" inmemory/client.go 's/if d > 0 \{/if true {/' || bad=1
+    mutate "inmemory: default cleanup interval is zero"         inmemory/client.go  's/interval: time\.Minute,/interval: 0,/'      || bad=1
+    mutate "inmemory: janitor never sweeps"                     inmemory/client.go  's/(case <-t\.C:\n\t\t\t)c\.sweep\(\)/${1}_ = c/' || bad=1
+    mutate "inmemory: Close does not stop the janitor"          inmemory/client.go  's/close\(c\.stop\)/_ = c.stop/'              || bad=1
     mutate "inmemory: sweep never deletes"                      inmemory/client.go  's/if e\.expired\(now\) \{/if e.expired(now) \&\& false {/'        || bad=1
     exit $bad ;;
   fuzz)
