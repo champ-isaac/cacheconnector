@@ -16,7 +16,7 @@ sync-commit: bbd1d7c4ffd5a5792b27bf42c47224be26f3b08b
 
 ## Tool and why
 
-Plain `go test`, run on the real code through `go test -overlay`. Nothing is copied into the repo and no product file is edited.
+Plain `go test`, run on the real code through `go test -overlay`. `check` and `mutants` copy nothing into the repo and edit no product file. `fuzz` is the one exception: `go test -fuzz` needs the check file inside the package, so it copies `expiration_test.go` to `memcached/zz_formal_test.go` for the run and removes it on exit. A hard kill can leave that file behind, so delete it and never commit it.
 
 - No formal verifier for Go is practical to install here. Gobra needs a separate Viper toolchain and annotations in the product code. A TLA+ model would be a hand-made copy of the code, and this promise is not about event order.
 - So the check enumerates every case in a stated bound and compares the real code with a short independent spec. Inside the bound it covers every case. Outside it, it proves nothing.
@@ -73,5 +73,5 @@ There are four checks. 1 and 2 cover the TTL promise. 3 and 4 cover the backgrou
 ## Known limits
 
 - **After 19 Jan 2038** the memcached ttl is a 32-bit number, so `expiration` returns `MaxInt32` for every ttl over 30 days, a time already in the past. Those entries would expire at once. The check assumes a clock before that date and does not test it. Nothing today is affected.
-- **Not covered:** the redis and valkey server side, memcached's own handling of the number, clock differences between this machine and the memcached server (an absolute timestamp for a ttl over 30 days shifts by the difference), concurrent callers (only one at a time is checked), and exact janitor timing (check 4 uses wide limits and does not bound how often the janitor runs), and the `cleanup_interval` DSN parameter.
+- **Not covered:** the redis and valkey server side, memcached's own handling of the number, clock differences between this machine and the memcached server (an absolute timestamp for a ttl over 30 days shifts by the difference), concurrent callers (only one at a time is checked), so **locking is not checked**: a `sweep` that takes only a read lock, or any other race between the janitor and `Get` or `Set`, passes every check here (use `go test -race ./inmemory` for that), and exact janitor timing (check 4 uses wide limits and does not bound how often the janitor runs), and the `cleanup_interval` DSN parameter.
 - A pass is a pass inside the bounds above, not a proof for every input.
