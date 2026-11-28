@@ -69,7 +69,9 @@ case "${1:-}" in
     mutate "inmemory: default cleanup interval is zero"         inmemory/client.go  's/interval: time\.Minute,/interval: 0,/'      || bad=1
     mutate "inmemory: janitor never sweeps"                     inmemory/client.go  's/(case <-t\.C:\n\t\t\t)c\.sweep\(\)/${1}_ = c/' || bad=1
     mutate "inmemory: Close does not stop the janitor"          inmemory/client.go  's/close\(c\.stop\)/_ = c.stop/'              || bad=1
-    mutate "inmemory: sweep never deletes"                      inmemory/client.go  's/if e\.expired\(now\) \{/if e.expired(now) \&\& false {/'        || bad=1
+    mutate "inmemory: Close returns before the janitor has stopped (<-c.done removed)" inmemory/client.go 's/\t<-c\.done\n//' || bad=1
+    mutate "inmemory: Close can close the stop channel twice (stopOnce removed)" inmemory/client.go 's/c\.stopOnce\.Do\(func\(\) \{ close\(c\.stop\) \}\)/close(c.stop)/' || bad=1
+    mutate "inmemory: sweep never deletes"                     inmemory/client.go  's/if e\.expired\(now\) \{/if e.expired(now) \&\& false {/'        || bad=1
     exit $bad ;;
   fuzz)
     echo "fuzzing needs the check file inside the package, copying it for this run only"

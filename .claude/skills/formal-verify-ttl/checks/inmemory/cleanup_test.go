@@ -72,7 +72,26 @@ func TestFormalNewSurvivesAnyInterval(t *testing.T) {
 
 func TestFormalJanitorSweepsAndCloseStopsIt(t *testing.T) {
 	var secs atomic.Int64
-	clock := func(c *Client) { c.now = func() time.Time { return time.Unix(1000+secs.Load(), 0) } }
+	var stall atomic.Bool
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	open := func() { releaseOnce.Do(func() { close(release) }) }
+	defer open()
+	// While stall is set, the first clock read blocks until release is closed. Only the
+	// janitor reads the clock then, in sweep, so this holds the janitor in the middle of a pass.
+	clock := func(c *Client) {
+		c.now = func() time.Time {
+			if stall.Load() {
+				select {
+				case entered <- struct{}{}:
+				default:
+				}
+				<-release
+			}
+			return time.Unix(1000+secs.Load(), 0)
+		}
+	}
 	c := New(clock, WithCleanupInterval(2*time.Millisecond))
 	c.Set("soon", "1", time.Second)
 	c.Set("later", "2", time.Hour)
@@ -96,16 +115,28 @@ func TestFormalJanitorSweepsAndCloseStopsIt(t *testing.T) {
 		t.Fatal("the janitor removed an entry that has not expired")
 	}
 
+	// Stall the janitor inside a sweep. Close must now wait for it, so none of the 8 callers
+	// may return until the janitor is released. A Close that returns early is seen here.
+	stall.Store(true)
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the janitor did not reach the clock within 5s")
+	}
 	var wg sync.WaitGroup
-	closed := within(5*time.Second, func() {
-		for i := 0; i < 8; i++ {
-			wg.Add(1)
-			go func() { defer wg.Done(); _ = c.Close() }()
-		}
-		wg.Wait()
-	})
-	if !closed {
-		t.Fatal("Close from 8 callers at once did not return in 5s")
+	returned := make(chan struct{}, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); _ = c.Close(); returned <- struct{}{} }()
+	}
+	select {
+	case <-returned:
+		t.Fatal("Close returned while the janitor was still stalled in a sweep")
+	case <-time.After(200 * time.Millisecond):
+	}
+	open()
+	if !within(5*time.Second, wg.Wait) {
+		t.Fatal("Close from 8 callers at once did not return in 5s after the janitor was released")
 	}
 	select {
 	case <-c.done:
