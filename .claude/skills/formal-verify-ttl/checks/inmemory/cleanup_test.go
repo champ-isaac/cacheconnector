@@ -50,24 +50,28 @@ func TestFormalIntervalStaysPositiveUnderAnyOptions(t *testing.T) {
 }
 
 func TestFormalNewSurvivesAnyInterval(t *testing.T) {
-	cases := []*Client{New()}
+	opts := [][]Option{nil}
 	for _, d := range intervals[:len(intervals)-2] {
-		cases = append(cases, New(WithCleanupInterval(d)))
+		opts = append(opts, []Option{WithCleanupInterval(d)})
 	}
-	time.Sleep(50 * time.Millisecond)
-	for i, c := range cases {
-		if c.interval <= 0 {
-			t.Fatalf("client %d has interval %v", i, c.interval)
-		}
-		c.Set("k", "v", time.Minute)
-		if v, ok := c.Get("k"); !ok || v != "v" {
-			t.Fatalf("client %d: Get after Set = %q, %v", i, v, ok)
-		}
-		if !within(5*time.Second, func() { _ = c.Close() }) {
-			t.Fatalf("client %d: Close did not return in 5s", i)
-		}
+	for i, o := range opts {
+		func() {
+			c := New(o...)
+			defer func() { within(5*time.Second, func() { _ = c.Close() }) }()
+			time.Sleep(50 * time.Millisecond)
+			if c.interval <= 0 {
+				t.Fatalf("client %d has interval %v", i, c.interval)
+			}
+			c.Set("k", "v", time.Minute)
+			if v, ok := c.Get("k"); !ok || v != "v" {
+				t.Fatalf("client %d: Get after Set = %q, %v", i, v, ok)
+			}
+			if !within(5*time.Second, func() { _ = c.Close() }) {
+				t.Fatalf("client %d: Close did not return in 5s", i)
+			}
+		}()
 	}
-	t.Logf("checked New() and %d intervals, the janitor goroutine stayed alive and Close returned", len(cases)-1)
+	t.Logf("checked New() and %d intervals, the janitor goroutine stayed alive and Close returned", len(opts)-1)
 }
 
 func TestFormalJanitorSweepsAndCloseStopsIt(t *testing.T) {

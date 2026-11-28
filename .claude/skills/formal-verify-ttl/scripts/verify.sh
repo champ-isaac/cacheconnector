@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Formal TTL check for cacheconnector.
-#   verify.sh check     run both checks against the real code (about 20 s)
+#   verify.sh check     run the four checks against the real code (about 10 s)
 #   verify.sh mutants   break the code on purpose, once per mutant, and confirm each break is caught
 #   verify.sh fuzz [d]  extra random search on memcached expiration, default 30s
 #   verify.sh drift     list covered files that changed since the sync commit
-# The repo is never edited. Checks and mutants reach the packages through `go test -overlay`.
+# check and mutants never edit the repo: they reach the packages through `go test -overlay`.
+# fuzz is the exception: it copies one file into memcached/ for its run and removes it on exit.
 set -u
 SKILL="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$SKILL/../../.." && pwd)"
 SYNC="$(sed -n 's/^sync-commit: //p' "$SKILL/SKILL.md" | head -1)"
-COVERED="memcached/client.go inmemory/client.go"
+COVERED="memcached/client.go inmemory/client.go inmemory/cache.go"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 cd "$REPO"
@@ -41,7 +42,6 @@ drift() {
 
 mutate() { # mutate <name> <file> <perl -0 expression>; prints whether the checks caught it
   name=$1 file=$2 expr=$3
-  cp "$file" "$WORK/orig.go"
   perl -0pe "$expr" "$file" > "$WORK/mutant.go"
   if cmp -s "$file" "$WORK/mutant.go"; then echo "STALE  $name: the pattern no longer matches $file, update scripts/verify.sh"; return 2; fi
   overlay "$WORK/m.json" "$file" "$WORK/mutant.go"
