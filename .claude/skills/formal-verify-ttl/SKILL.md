@@ -1,7 +1,7 @@
 ---
 name: formal-verify-ttl
 description: Exhaustively checks the TTL promise of cacheconnector, that a value stored with a positive ttl lives exactly that long and a value stored with ttl 0 or less never expires. Also checks that the inmemory cleanup interval can never be zero or negative, and that the background janitor sweeps and stops. Covers memcached.expiration and the inmemory Client (Set, Get, Delete, sweep, WithCleanupInterval, janitor, Close). Use after any change to memcached/client.go, inmemory/client.go, or how a ttl is passed to a backend, and before trusting a green unit test on expiry.
-sync-commit: a68e4549bc4cbaf9dc21965245ddd4d29be580d2
+sync-commit: bbd1d7c4ffd5a5792b27bf42c47224be26f3b08b
 ---
 
 # Formal check of the cacheconnector TTL promise
