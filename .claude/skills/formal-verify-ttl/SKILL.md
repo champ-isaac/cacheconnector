@@ -26,17 +26,17 @@ Plain `go test`, run on the real code through `go test -overlay`. Nothing is cop
 From the repo root:
 
 ```
-.claude/skills/formal-verify-ttl/scripts/verify.sh check      # about 10 s, run on every change to a covered file
-.claude/skills/formal-verify-ttl/scripts/verify.sh mutants    # about 70 s, proves the check can fail
+.claude/skills/formal-verify-ttl/scripts/verify.sh check      # about 15 s, run on every change to a covered file
+.claude/skills/formal-verify-ttl/scripts/verify.sh mutants    # about 80 s, proves the check can fail
 .claude/skills/formal-verify-ttl/scripts/verify.sh fuzz 60s   # optional random search beyond the bound
 .claude/skills/formal-verify-ttl/scripts/verify.sh drift      # which covered files changed since the sync commit
 ```
 
-`check` prints `ok` for `memcached` and `inmemory` when everything holds. Any other output is a failure. Read it as below.
+`check` prints `ok` for `memcached`, then `ok` for `inmemory` twice, when everything holds. The second `inmemory` line is check 5, which is built only under `go test -race` and so needs cgo and a C compiler. Any other output is a failure, and a missing compiler shows as a build error, not as a skipped check. Read it as below.
 
 ## What is checked
 
-There are four checks. 1 and 2 cover the TTL promise. 3 and 4 cover the background cleanup that keeps memory bounded.
+There are five checks. 1 and 2 cover the TTL promise. 3 and 4 cover the background cleanup that keeps memory bounded. 5 covers the locking between the cleanup and callers.
 
 **1. `memcached.expiration(ttl, now) int32`, in `memcached/client.go`.** The spec models what a memcached server does with the number: 0 is never, 1 to 2592000 (30 days) is seconds from now, anything bigger is a unix timestamp, and the value must fit an int32. For each case the check works out the moment memcached would drop the entry and compares it with `now + ceil(ttl)`.
 
@@ -50,10 +50,13 @@ There are four checks. 1 and 2 cover the TTL promise. 3 and 4 cover the backgrou
 
 **4. The janitor loop and `Close`, in `inmemory/client.go`.** A client with a 2 ms interval and a fake clock holds one entry that expires, one that has not, and one that never expires. Within 5 seconds the janitor must remove the expired one and only that one. Then 8 callers run `Close` at once. All must return within 5 seconds, and the janitor goroutine must have stopped. Unlike checks 1 to 3, this one depends on real time, so it uses wide limits. If it fails on a loaded machine, rerun it once before suspecting a bug.
 
+**5. `Get`, `Set` and `sweep` at the same time, in `inmemory/client.go`.** This check runs under `go test -race`, because a locking mistake in `sweep` is a data race, and the race detector reports it whenever the accesses overlap, where a plain run would see it only by luck. One goroutine runs `sweep` in a loop. 4 readers call `Get` on keys that never expire and on keys that expire, and 3 writers call `Set` and move the fake clock on, so `sweep` always has expired keys to delete. A key that never expires must always be found with its value, and a value that is found must be the one stored. After the goroutines stop, one more `sweep` must leave every never-expiring key and no expired key. The janitor stays idle (an interval of one hour), so the only `sweep` calls are the loop's. It takes about 0.5 s.
+
 ## Reading a result
 
 - **A counterexample from check 1** names the ttl, the clock, and when memcached would drop the entry against when it should. Check it by hand, then fix `expiration` or, if the promise changed on purpose, change `problem` in `checks/memcached/expiration_test.go`.
 - **A failure from check 3 or 4** names the interval or the step. A `panic: non-positive interval for NewTicker` means the janitor was started with a bad interval, which is the #19 regression.
+- **A failure from check 5** is `WARNING: DATA RACE` with two stacks, or a message that names a key and the wrong value. In a race report, a write in `sweep` against a read in `Get` means `sweep` deletes under a read lock, or does not lock at all. That is the mutant "sweep takes only a read lock".
 - **A counterexample from check 2** is the shortest operation list the search finds at that length, for example `set(ttl=1s)(k0), tick1s: Get(k0) = "v0", true but the entry should be gone`. Replay it in a unit test.
 - **A bug in the check itself** is a real possibility. Before changing product code, ask whether the spec in `problem` or `compare` says what the doc says. Do not loosen the spec just to get a pass.
 - `STALE`, `BROKEN` or `MISSED` from `mutants` mean the check no longer proves what it did. `STALE` means a covered line was reworded, so update the pattern in `scripts/verify.sh`. `MISSED` means a deliberate break got through, so the check has a hole.
@@ -65,6 +68,7 @@ There are four checks. 1 and 2 cover the TTL promise. 3 and 4 cover the backgrou
 | `checks/memcached/expiration_test.go` | `memcached/client.go`: `expiration`, `maxRelativeTTL`, and the ttl argument of `Client.Set` |
 | `checks/inmemory/lifetime_test.go` | `inmemory/client.go`: `Client.Set`, `Get`, `Delete`, `sweep`, `entry.expired` |
 | `checks/inmemory/cleanup_test.go` | `inmemory/client.go`: `WithCleanupInterval`, `New` (the default interval), `janitor`, `Close` |
+| `checks/inmemory/concurrent_test.go` (built only under `-race`) | `inmemory/client.go`: the locking in `Get`, `Set` and `sweep` (`Client.mu`) |
 
 `inmemory/cache.go` passes the ttl straight to `Client.Set` and is covered by reading, not by a check. Its `factory` rejects a `cleanup_interval` of zero or less before it reaches `WithCleanupInterval`, and only the repo's unit tests cover that path. `redis/cache.go` clamps a negative ttl to 0 and hands the rest to go-redis, so it is not covered.
 
@@ -73,5 +77,5 @@ There are four checks. 1 and 2 cover the TTL promise. 3 and 4 cover the backgrou
 ## Known limits
 
 - **After 19 Jan 2038** the memcached ttl is a 32-bit number, so `expiration` returns `MaxInt32` for every ttl over 30 days, a time already in the past. Those entries would expire at once. The check assumes a clock before that date and does not test it. Nothing today is affected.
-- **Not covered:** the redis and valkey server side, memcached's own handling of the number, clock differences between this machine and the memcached server (an absolute timestamp for a ttl over 30 days shifts by the difference), concurrent callers (only one at a time is checked), and exact janitor timing (check 4 uses wide limits and does not bound how often the janitor runs), and the `cleanup_interval` DSN parameter.
+- **Not covered:** the redis and valkey server side, memcached's own handling of the number, clock differences between this machine and the memcached server (an absolute timestamp for a ttl over 30 days shifts by the difference), concurrent callers beyond check 5 (that check runs `Get`, `Set` and `sweep` together on one client, but not `Delete`, and not `Close` against them), and exact janitor timing (check 4 uses wide limits and does not bound how often the janitor runs), and the `cleanup_interval` DSN parameter.
 - A pass is a pass inside the bounds above, not a proof for every input.

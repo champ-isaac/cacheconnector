@@ -17,16 +17,23 @@ cd "$REPO"
 overlay() { # overlay <out.json> [<repo-relative real file> <replacement>]
   out=$1; shift
   {
-    printf '{"Replace":{"%s":"%s","%s":"%s","%s":"%s"' \
+    printf '{"Replace":{"%s":"%s","%s":"%s","%s":"%s","%s":"%s"' \
       "$REPO/memcached/zz_formal_test.go" "$SKILL/checks/memcached/expiration_test.go" \
       "$REPO/inmemory/zz_formal_test.go" "$SKILL/checks/inmemory/lifetime_test.go" \
-      "$REPO/inmemory/zz_formal_cleanup_test.go" "$SKILL/checks/inmemory/cleanup_test.go"
+      "$REPO/inmemory/zz_formal_cleanup_test.go" "$SKILL/checks/inmemory/cleanup_test.go" \
+      "$REPO/inmemory/zz_formal_concurrent_test.go" "$SKILL/checks/inmemory/concurrent_test.go"
     [ $# -eq 2 ] && printf ',"%s":"%s"' "$REPO/$1" "$2"
     printf '}}'
   } > "$out"
 }
 
-run() { shift_pkgs=${2:-./memcached ./inmemory}; go test -count=1 -overlay "$1" -run 'TestFormal' $shift_pkgs; }
+run() { # run <overlay.json> [packages]: every check, then check 5, which is built only under -race
+  pkgs=${2:-./memcached ./inmemory}
+  go test -count=1 -overlay "$1" -run 'TestFormal' $pkgs || return 1
+  case " $pkgs " in
+    *" ./inmemory "*) go test -race -count=1 -overlay "$1" -run 'TestFormalConcurrent' ./inmemory ;;
+  esac
+}
 
 drift() {
   if [ -z "$SYNC" ]; then echo "no sync-commit in SKILL.md"; return 1; fi
@@ -47,7 +54,7 @@ mutate() { # mutate <name> <file> <perl -0 expression>; prints whether the check
   overlay "$WORK/m.json" "$file" "$WORK/mutant.go"
   if run "$WORK/m.json" "./$(dirname "$file")" > "$WORK/m.out" 2>&1; then echo "MISSED $name"; return 1; fi
   if grep -q 'build failed\|setup failed' "$WORK/m.out"; then echo "BROKEN $name: mutant did not compile"; return 2; fi
-  echo "CAUGHT $name: $(grep -E 'zz_formal(_cleanup)?_test\.go:[0-9]+:|^panic:' "$WORK/m.out" | grep -v 'checked ' | head -1 | sed -E 's/^ *zz_formal(_cleanup)?_test.go:[0-9]*: //' | cut -c1-160)"
+  echo "CAUGHT $name: $(grep -E 'zz_formal[a-z_]*_test\.go:[0-9]+:|^panic:|^fatal error:|WARNING: DATA RACE' "$WORK/m.out" | grep -v 'checked ' | head -1 | sed -E 's/^ *zz_formal[a-z_]*_test.go:[0-9]*: //' | cut -c1-160)"
 }
 
 case "${1:-}" in
@@ -69,7 +76,8 @@ case "${1:-}" in
     mutate "inmemory: default cleanup interval is zero"         inmemory/client.go  's/interval: time\.Minute,/interval: 0,/'      || bad=1
     mutate "inmemory: janitor never sweeps"                     inmemory/client.go  's/(case <-t\.C:\n\t\t\t)c\.sweep\(\)/${1}_ = c/' || bad=1
     mutate "inmemory: Close does not stop the janitor"          inmemory/client.go  's/close\(c\.stop\)/_ = c.stop/'              || bad=1
-    mutate "inmemory: sweep never deletes"                      inmemory/client.go  's/if e\.expired\(now\) \{/if e.expired(now) \&\& false {/'        || bad=1
+    mutate "inmemory: sweep takes only a read lock (a data race with Get)" inmemory/client.go 's/(func \(c \*Client\) sweep\(\) \{\n\tnow := c\.now\(\)\n\t)c\.mu\.Lock\(\)\n\tdefer c\.mu\.Unlock\(\)/${1}c.mu.RLock()\n\tdefer c.mu.RUnlock()/' || bad=1
+    mutate "inmemory: sweep never deletes"                     inmemory/client.go  's/if e\.expired\(now\) \{/if e.expired(now) \&\& false {/'        || bad=1
     exit $bad ;;
   fuzz)
     echo "fuzzing needs the check file inside the package, copying it for this run only"
